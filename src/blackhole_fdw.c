@@ -118,6 +118,8 @@ blackhole_fdw_handler(PG_FUNCTION_ARGS)
 {
 	FdwRoutine *fdwroutine = makeNode(FdwRoutine);
 
+	elog(DEBUG1,"entering function %s",__func__);
+
 	/* assign the handlers for the FDW */
 
 	/* these are required */
@@ -153,6 +155,8 @@ Datum
 blackhole_fdw_validator(PG_FUNCTION_ARGS)
 {
 	List	   *options_list = untransformRelOptions(PG_GETARG_DATUM(0));
+
+	elog(DEBUG1,"entering function %s",__func__);
 
 	/* make sure the options are valid */
 
@@ -191,6 +195,8 @@ blackholeGetForeignRelSize(PlannerInfo *root,
 
 	BlackholeFdwPlanState *fdw_private;
 
+	elog(DEBUG1,"entering function %s",__func__);
+
 	baserel->rows = 0;
 
 	fdw_private = palloc0(sizeof(BlackholeFdwPlanState));
@@ -226,6 +232,8 @@ blackholeGetForeignPaths(PlannerInfo *root,
 
 	Cost		startup_cost,
 				total_cost;
+
+	elog(DEBUG1,"entering function %s",__func__);
 
 	startup_cost = 0;
 	total_cost = startup_cost + baserel->rows;
@@ -272,6 +280,9 @@ blackholeGetForeignPlan(PlannerInfo *root,
 	 * nodes from the clauses and ignore pseudoconstants (which will be
 	 * handled elsewhere).
 	 */
+
+	elog(DEBUG1,"entering function %s",__func__);
+
 	scan_clauses = extract_actual_clauses(scan_clauses, false);
 
 	/* Create the ForeignScan node */
@@ -306,6 +317,9 @@ blackholeBeginForeignScan(ForeignScanState *node,
 	 * ExplainForeignScan and EndForeignScan.
 	 *
 	 */
+
+	elog(DEBUG1,"entering function %s",__func__);
+
 }
 
 
@@ -343,6 +357,8 @@ blackholeIterateForeignScan(ForeignScanState *node)
 	 */
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
 
+	elog(DEBUG1,"entering function %s",__func__);
+
 	ExecClearTuple(slot);
 
 	/* get the next record, if any, and fill in the slot */
@@ -360,6 +376,9 @@ blackholeReScanForeignScan(ForeignScanState *node)
 	 * depends on may have changed value, so the new scan does not necessarily
 	 * return exactly the same rows.
 	 */
+
+	elog(DEBUG1,"entering function %s",__func__);
+
 }
 
 
@@ -371,6 +390,9 @@ blackholeEndForeignScan(ForeignScanState *node)
 	 * release palloc'd memory, but for example open files and connections to
 	 * remote servers should be cleaned up.
 	 */
+
+	elog(DEBUG1,"entering function %s",__func__);
+
 }
 
 
@@ -405,6 +427,9 @@ blackholeAddForeignUpdateTargets(Query *parsetree,
 	 * DELETE operations, though UPDATE may still be feasible if the FDW
 	 * relies on an unchanging primary key to identify rows.)
 	 */
+
+	elog(DEBUG1,"entering function %s",__func__);
+
 }
 
 
@@ -433,6 +458,8 @@ blackholePlanForeignModify(PlannerInfo *root,
 	 * plan-time actions are taken, and the fdw_private list delivered to
 	 * BeginForeignModify will be NIL.
 	 */
+
+	elog(DEBUG1,"entering function %s",__func__);
 
 	return NULL;
 }
@@ -470,6 +497,9 @@ blackholeBeginForeignModify(ModifyTableState *mtstate,
 	 * If the BeginForeignModify pointer is set to NULL, no action is taken
 	 * during executor startup.
 	 */
+
+	elog(DEBUG1,"entering function %s",__func__);
+
 }
 
 
@@ -505,6 +535,8 @@ blackholeExecForeignInsert(EState *estate,
 	 * into the foreign table will fail with an error message.
 	 *
 	 */
+
+	elog(DEBUG1,"entering function %s",__func__);
 
 	return slot;
 }
@@ -543,6 +575,8 @@ blackholeExecForeignUpdate(EState *estate,
 	 *
 	 */
 
+	elog(DEBUG1,"entering function %s",__func__);
+
 	return slot;
 }
 
@@ -577,6 +611,8 @@ blackholeExecForeignDelete(EState *estate,
 	 * from the foreign table will fail with an error message.
 	 */
 
+	elog(DEBUG1,"entering function %s",__func__);
+
 	return slot;
 }
 
@@ -593,6 +629,9 @@ blackholeEndForeignModify(EState *estate,
 	 * If the EndForeignModify pointer is set to NULL, no action is taken
 	 * during executor shutdown.
 	 */
+
+	elog(DEBUG1,"entering function %s",__func__);
+
 }
 
 
@@ -610,6 +649,9 @@ blackholeExplainForeignScan(ForeignScanState *node,
 	 * If the ExplainForeignScan pointer is set to NULL, no additional
 	 * information is printed during EXPLAIN.
 	 */
+
+	elog(DEBUG1,"entering function %s",__func__);
+
 }
 
 
@@ -631,6 +673,9 @@ blackholeExplainForeignModify(ModifyTableState *mtstate,
 	 * If the ExplainForeignModify pointer is set to NULL, no additional
 	 * information is printed during EXPLAIN.
 	 */
+
+	elog(DEBUG1,"entering function %s",__func__);
+
 }
 
 
@@ -665,6 +710,8 @@ blackholeAnalyzeForeignTable(Relation relation,
 	 * the FDW does not have any concept of dead rows.)
 	 * ----
 	 */
+
+	elog(DEBUG1,"entering function %s",__func__);
 
 	return false;
 }
