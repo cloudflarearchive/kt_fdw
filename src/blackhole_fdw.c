@@ -1,4 +1,18 @@
-
+/*-------------------------------------------------------------------------
+ *
+ * Blackhole Foreign Data Wrapper for PostgreSQL
+ *
+ * Copyright (c) 2013 Andrew Dunstan
+ *
+ * This software is released under the PostgreSQL Licence
+ *
+ * Author: Andrew Dunstan <andrew@dunslane.net>
+ *
+ * IDENTIFICATION
+ *        blackhole_fdw/src/blackhole_fdw.c
+ *
+ *-------------------------------------------------------------------------
+ */
 
 #include "postgres.h"
 
@@ -21,6 +35,7 @@ PG_FUNCTION_INFO_V1(blackhole_fdw_handler);
 PG_FUNCTION_INFO_V1(blackhole_fdw_validator);
 
 
+/* callback functions */
 static void blackholeGetForeignRelSize(PlannerInfo *root,
 						   RelOptInfo *baserel,
 						   Oid foreigntableid);
@@ -91,7 +106,13 @@ static bool blackholeAnalyzeForeignTable(Relation relation,
 							 AcquireSampleRowsFunc *func,
 							 BlockNumber *totalpages);
 
-/* structures used by the FDW */
+/* 
+ * structures used by the FDW 
+ *
+ * These next two are not actualkly used by blackhole, but something like this
+ * will be needed by anything more complicated that does actual work.
+ *
+ */
 
 /*
  * Describes the valid options for objects that use this wrapper.
@@ -103,8 +124,8 @@ struct blackholeFdwOption
 };
 
 /*
- * This is what will be set and stashed away in fdw_private during
- * GetForeignRelSize, and fetch for the subsequent routines.
+ * This is what will be set and stashed away in fdw_private and fetched 
+ * for subsequent routines.
  */
 typedef struct
 {

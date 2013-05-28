@@ -1,3 +1,19 @@
+##############################################################################
+#
+# Blackhole Foreign Data Wrapper for PostgreSQL
+# 
+# Copyright (c) 2013 Andrew Dunstan
+# 
+# This software is released under the PostgreSQL Licence
+# 
+# Author: Andrew Dunstan <andrew@dunslane.net>
+# 
+# IDENTIFICATION
+#        blackhole_fdw/Makefile
+# 
+##############################################################################
+
+
 EXTENSION    = blackhole_fdw
 EXTVERSION   = $(shell grep default_version $(EXTENSION).control | sed -e "s/default_version[[:space:]]*=[[:space:]]*'\([^']*\)'/\1/")
 
