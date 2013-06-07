@@ -1,5 +1,0 @@
-# blackhole FDW
-comment = 'Blackhole Foreign Data Wrapper'
-default_version = '0.0.1'
-module_pathname = '$libdir/blackhole_fdw'
-relocatable = true

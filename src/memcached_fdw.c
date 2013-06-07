@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- * Blackhole Foreign Data Wrapper for PostgreSQL
+ * Memcached Foreign Data Wrapper for PostgreSQL
  *
  * Copyright (c) 2013 Andrew Dunstan
  *
@@ -9,7 +9,7 @@
  * Author: Andrew Dunstan <andrew@dunslane.net>
  *
  * IDENTIFICATION
- *        blackhole_fdw/src/blackhole_fdw.c
+ *        memcached_fdw/src/memcached_fdw.c
  *
  *-------------------------------------------------------------------------
  */
@@ -28,88 +28,88 @@ PG_MODULE_MAGIC;
 /*
  * SQL functions
  */
-extern Datum blackhole_fdw_handler(PG_FUNCTION_ARGS);
-extern Datum blackhole_fdw_validator(PG_FUNCTION_ARGS);
+extern Datum memcached_fdw_handler(PG_FUNCTION_ARGS);
+extern Datum memcached_fdw_validator(PG_FUNCTION_ARGS);
 
-PG_FUNCTION_INFO_V1(blackhole_fdw_handler);
-PG_FUNCTION_INFO_V1(blackhole_fdw_validator);
+PG_FUNCTION_INFO_V1(memcached_fdw_handler);
+PG_FUNCTION_INFO_V1(memcached_fdw_validator);
 
 
 /* callback functions */
-static void blackholeGetForeignRelSize(PlannerInfo *root,
+static void memcachedGetForeignRelSize(PlannerInfo *root,
 						   RelOptInfo *baserel,
 						   Oid foreigntableid);
 
-static void blackholeGetForeignPaths(PlannerInfo *root,
+static void memcachedGetForeignPaths(PlannerInfo *root,
 						 RelOptInfo *baserel,
 						 Oid foreigntableid);
 
-static ForeignScan *blackholeGetForeignPlan(PlannerInfo *root,
+static ForeignScan *memcachedGetForeignPlan(PlannerInfo *root,
 						RelOptInfo *baserel,
 						Oid foreigntableid,
 						ForeignPath *best_path,
 						List *tlist,
 						List *scan_clauses);
 
-static void blackholeBeginForeignScan(ForeignScanState *node,
+static void memcachedBeginForeignScan(ForeignScanState *node,
 						  int eflags);
 
-static TupleTableSlot *blackholeIterateForeignScan(ForeignScanState *node);
+static TupleTableSlot *memcachedIterateForeignScan(ForeignScanState *node);
 
-static void blackholeReScanForeignScan(ForeignScanState *node);
+static void memcachedReScanForeignScan(ForeignScanState *node);
 
-static void blackholeEndForeignScan(ForeignScanState *node);
+static void memcachedEndForeignScan(ForeignScanState *node);
 
-static void blackholeAddForeignUpdateTargets(Query *parsetree,
+static void memcachedAddForeignUpdateTargets(Query *parsetree,
 								 RangeTblEntry *target_rte,
 								 Relation target_relation);
 
-static List *blackholePlanForeignModify(PlannerInfo *root,
+static List *memcachedPlanForeignModify(PlannerInfo *root,
 						   ModifyTable *plan,
 						   Index resultRelation,
 						   int subplan_index);
 
-static void blackholeBeginForeignModify(ModifyTableState *mtstate,
+static void memcachedBeginForeignModify(ModifyTableState *mtstate,
 							ResultRelInfo *rinfo,
 							List *fdw_private,
 							int subplan_index,
 							int eflags);
 
-static TupleTableSlot *blackholeExecForeignInsert(EState *estate,
+static TupleTableSlot *memcachedExecForeignInsert(EState *estate,
 						   ResultRelInfo *rinfo,
 						   TupleTableSlot *slot,
 						   TupleTableSlot *planSlot);
 
-static TupleTableSlot *blackholeExecForeignUpdate(EState *estate,
+static TupleTableSlot *memcachedExecForeignUpdate(EState *estate,
 						   ResultRelInfo *rinfo,
 						   TupleTableSlot *slot,
 						   TupleTableSlot *planSlot);
 
-static TupleTableSlot *blackholeExecForeignDelete(EState *estate,
+static TupleTableSlot *memcachedExecForeignDelete(EState *estate,
 						   ResultRelInfo *rinfo,
 						   TupleTableSlot *slot,
 						   TupleTableSlot *planSlot);
 
-static void blackholeEndForeignModify(EState *estate,
+static void memcachedEndForeignModify(EState *estate,
 						  ResultRelInfo *rinfo);
 
-static void blackholeExplainForeignScan(ForeignScanState *node,
+static void memcachedExplainForeignScan(ForeignScanState *node,
 							struct ExplainState *es);
 
-static void blackholeExplainForeignModify(ModifyTableState *mtstate,
+static void memcachedExplainForeignModify(ModifyTableState *mtstate,
 							  ResultRelInfo *rinfo,
 							  List *fdw_private,
 							  int subplan_index,
 							  struct ExplainState *es);
 
-static bool blackholeAnalyzeForeignTable(Relation relation,
+static bool memcachedAnalyzeForeignTable(Relation relation,
 							 AcquireSampleRowsFunc *func,
 							 BlockNumber *totalpages);
 
 /* 
  * structures used by the FDW 
  *
- * These next two are not actualkly used by blackhole, but something like this
+ * These next two are not actualkly used by memcached, but something like this
  * will be needed by anything more complicated that does actual work.
  *
  */
@@ -117,7 +117,7 @@ static bool blackholeAnalyzeForeignTable(Relation relation,
 /*
  * Describes the valid options for objects that use this wrapper.
  */
-struct blackholeFdwOption
+struct memcachedFdwOption
 {
 	const char *optname;
 	Oid			optcontext;		/* Oid of catalog in which option may appear */
@@ -131,11 +131,11 @@ typedef struct
 {
 	char	   *foo;
 	int			bar;
-}	BlackholeFdwPlanState;
+}	MemcachedFdwPlanState;
 
 
 Datum
-blackhole_fdw_handler(PG_FUNCTION_ARGS)
+memcached_fdw_handler(PG_FUNCTION_ARGS)
 {
 	FdwRoutine *fdwroutine = makeNode(FdwRoutine);
 
@@ -144,36 +144,36 @@ blackhole_fdw_handler(PG_FUNCTION_ARGS)
 	/* assign the handlers for the FDW */
 
 	/* these are required */
-	fdwroutine->GetForeignRelSize = blackholeGetForeignRelSize;
-	fdwroutine->GetForeignPaths = blackholeGetForeignPaths;
-	fdwroutine->GetForeignPlan = blackholeGetForeignPlan;
-	fdwroutine->BeginForeignScan = blackholeBeginForeignScan;
-	fdwroutine->IterateForeignScan = blackholeIterateForeignScan;
-	fdwroutine->ReScanForeignScan = blackholeReScanForeignScan;
-	fdwroutine->EndForeignScan = blackholeEndForeignScan;
+	fdwroutine->GetForeignRelSize = memcachedGetForeignRelSize;
+	fdwroutine->GetForeignPaths = memcachedGetForeignPaths;
+	fdwroutine->GetForeignPlan = memcachedGetForeignPlan;
+	fdwroutine->BeginForeignScan = memcachedBeginForeignScan;
+	fdwroutine->IterateForeignScan = memcachedIterateForeignScan;
+	fdwroutine->ReScanForeignScan = memcachedReScanForeignScan;
+	fdwroutine->EndForeignScan = memcachedEndForeignScan;
 
 	/* remainder are optional - use NULL if not required */
 	/* support for insert / update / delete */
-	fdwroutine->AddForeignUpdateTargets = blackholeAddForeignUpdateTargets;
-	fdwroutine->PlanForeignModify = blackholePlanForeignModify;
-	fdwroutine->BeginForeignModify = blackholeBeginForeignModify;
-	fdwroutine->ExecForeignInsert = blackholeExecForeignInsert;
-	fdwroutine->ExecForeignUpdate = blackholeExecForeignUpdate;
-	fdwroutine->ExecForeignDelete = blackholeExecForeignDelete;
-	fdwroutine->EndForeignModify = blackholeEndForeignModify;
+	fdwroutine->AddForeignUpdateTargets = memcachedAddForeignUpdateTargets;
+	fdwroutine->PlanForeignModify = memcachedPlanForeignModify;
+	fdwroutine->BeginForeignModify = memcachedBeginForeignModify;
+	fdwroutine->ExecForeignInsert = memcachedExecForeignInsert;
+	fdwroutine->ExecForeignUpdate = memcachedExecForeignUpdate;
+	fdwroutine->ExecForeignDelete = memcachedExecForeignDelete;
+	fdwroutine->EndForeignModify = memcachedEndForeignModify;
 
 	/* support for EXPLAIN */
-	fdwroutine->ExplainForeignScan = blackholeExplainForeignScan;
-	fdwroutine->ExplainForeignModify = blackholeExplainForeignModify;
+	fdwroutine->ExplainForeignScan = memcachedExplainForeignScan;
+	fdwroutine->ExplainForeignModify = memcachedExplainForeignModify;
 
 	/* support for ANALYSE */
-	fdwroutine->AnalyzeForeignTable = blackholeAnalyzeForeignTable;
+	fdwroutine->AnalyzeForeignTable = memcachedAnalyzeForeignTable;
 
 	PG_RETURN_POINTER(fdwroutine);
 }
 
 Datum
-blackhole_fdw_validator(PG_FUNCTION_ARGS)
+memcached_fdw_validator(PG_FUNCTION_ARGS)
 {
 	List	   *options_list = untransformRelOptions(PG_GETARG_DATUM(0));
 
@@ -187,13 +187,13 @@ blackhole_fdw_validator(PG_FUNCTION_ARGS)
 		ereport(ERROR,
 				(errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
 				 errmsg("invalid options"),
-				 errhint("Blackhole FDW doies not support any options")));
+				 errhint("Memcached FDW doies not support any options")));
 
 	PG_RETURN_VOID();
 }
 
 static void
-blackholeGetForeignRelSize(PlannerInfo *root,
+memcachedGetForeignRelSize(PlannerInfo *root,
 						   RelOptInfo *baserel,
 						   Oid foreigntableid)
 {
@@ -214,13 +214,13 @@ blackholeGetForeignRelSize(PlannerInfo *root,
 	 * can compute a better estimate of the average result row width.
 	 */
 
-	BlackholeFdwPlanState *fdw_private;
+	MemcachedFdwPlanState *fdw_private;
 
 	elog(DEBUG1,"entering function %s",__func__);
 
 	baserel->rows = 0;
 
-	fdw_private = palloc0(sizeof(BlackholeFdwPlanState));
+	fdw_private = palloc0(sizeof(MemcachedFdwPlanState));
 	baserel->fdw_private = (void *) fdw_private;
 
 	/* initialize reuired state in fdw_private */
@@ -228,7 +228,7 @@ blackholeGetForeignRelSize(PlannerInfo *root,
 }
 
 static void
-blackholeGetForeignPaths(PlannerInfo *root,
+memcachedGetForeignPaths(PlannerInfo *root,
 						 RelOptInfo *baserel,
 						 Oid foreigntableid)
 {
@@ -248,7 +248,7 @@ blackholeGetForeignPaths(PlannerInfo *root,
 	 */
 
 	/*
-	 * BlackholeFdwPlanState *fdw_private = baserel->fdw_private;
+	 * MemcachedFdwPlanState *fdw_private = baserel->fdw_private;
 	 */
 
 	Cost		startup_cost,
@@ -273,7 +273,7 @@ blackholeGetForeignPaths(PlannerInfo *root,
 
 
 static ForeignScan *
-blackholeGetForeignPlan(PlannerInfo *root,
+memcachedGetForeignPlan(PlannerInfo *root,
 						RelOptInfo *baserel,
 						Oid foreigntableid,
 						ForeignPath *best_path,
@@ -317,7 +317,7 @@ blackholeGetForeignPlan(PlannerInfo *root,
 
 
 static void
-blackholeBeginForeignScan(ForeignScanState *node,
+memcachedBeginForeignScan(ForeignScanState *node,
 						  int eflags)
 {
 	/*
@@ -345,7 +345,7 @@ blackholeBeginForeignScan(ForeignScanState *node,
 
 
 static TupleTableSlot *
-blackholeIterateForeignScan(ForeignScanState *node)
+memcachedIterateForeignScan(ForeignScanState *node)
 {
 	/*
 	 * Fetch one row from the foreign source, returning it in a tuple table
@@ -373,7 +373,7 @@ blackholeIterateForeignScan(ForeignScanState *node)
 
 
 	/*
-	 * BlackholeFdwExecutionState *festate = (BlackholeFdwExecutionState *)
+	 * MemcachedFdwExecutionState *festate = (MemcachedFdwExecutionState *)
 	 * node->fdw_state;
 	 */
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
@@ -390,7 +390,7 @@ blackholeIterateForeignScan(ForeignScanState *node)
 
 
 static void
-blackholeReScanForeignScan(ForeignScanState *node)
+memcachedReScanForeignScan(ForeignScanState *node)
 {
 	/*
 	 * Restart the scan from the beginning. Note that any parameters the scan
@@ -404,7 +404,7 @@ blackholeReScanForeignScan(ForeignScanState *node)
 
 
 static void
-blackholeEndForeignScan(ForeignScanState *node)
+memcachedEndForeignScan(ForeignScanState *node)
 {
 	/*
 	 * End the scan and release resources. It is normally not important to
@@ -418,7 +418,7 @@ blackholeEndForeignScan(ForeignScanState *node)
 
 
 static void
-blackholeAddForeignUpdateTargets(Query *parsetree,
+memcachedAddForeignUpdateTargets(Query *parsetree,
 								 RangeTblEntry *target_rte,
 								 Relation target_relation)
 {
@@ -455,7 +455,7 @@ blackholeAddForeignUpdateTargets(Query *parsetree,
 
 
 static List *
-blackholePlanForeignModify(PlannerInfo *root,
+memcachedPlanForeignModify(PlannerInfo *root,
 						   ModifyTable *plan,
 						   Index resultRelation,
 						   int subplan_index)
@@ -487,7 +487,7 @@ blackholePlanForeignModify(PlannerInfo *root,
 
 
 static void
-blackholeBeginForeignModify(ModifyTableState *mtstate,
+memcachedBeginForeignModify(ModifyTableState *mtstate,
 							ResultRelInfo *rinfo,
 							List *fdw_private,
 							int subplan_index,
@@ -525,7 +525,7 @@ blackholeBeginForeignModify(ModifyTableState *mtstate,
 
 
 static TupleTableSlot *
-blackholeExecForeignInsert(EState *estate,
+memcachedExecForeignInsert(EState *estate,
 						   ResultRelInfo *rinfo,
 						   TupleTableSlot *slot,
 						   TupleTableSlot *planSlot)
@@ -564,7 +564,7 @@ blackholeExecForeignInsert(EState *estate,
 
 
 static TupleTableSlot *
-blackholeExecForeignUpdate(EState *estate,
+memcachedExecForeignUpdate(EState *estate,
 						   ResultRelInfo *rinfo,
 						   TupleTableSlot *slot,
 						   TupleTableSlot *planSlot)
@@ -603,7 +603,7 @@ blackholeExecForeignUpdate(EState *estate,
 
 
 static TupleTableSlot *
-blackholeExecForeignDelete(EState *estate,
+memcachedExecForeignDelete(EState *estate,
 						   ResultRelInfo *rinfo,
 						   TupleTableSlot *slot,
 						   TupleTableSlot *planSlot)
@@ -639,7 +639,7 @@ blackholeExecForeignDelete(EState *estate,
 
 
 static void
-blackholeEndForeignModify(EState *estate,
+memcachedEndForeignModify(EState *estate,
 						  ResultRelInfo *rinfo)
 {
 	/*
@@ -657,7 +657,7 @@ blackholeEndForeignModify(EState *estate,
 
 
 static void
-blackholeExplainForeignScan(ForeignScanState *node,
+memcachedExplainForeignScan(ForeignScanState *node,
 							struct ExplainState *es)
 {
 	/*
@@ -677,7 +677,7 @@ blackholeExplainForeignScan(ForeignScanState *node,
 
 
 static void
-blackholeExplainForeignModify(ModifyTableState *mtstate,
+memcachedExplainForeignModify(ModifyTableState *mtstate,
 							  ResultRelInfo *rinfo,
 							  List *fdw_private,
 							  int subplan_index,
@@ -701,7 +701,7 @@ blackholeExplainForeignModify(ModifyTableState *mtstate,
 
 
 static bool
-blackholeAnalyzeForeignTable(Relation relation,
+memcachedAnalyzeForeignTable(Relation relation,
 							 AcquireSampleRowsFunc *func,
 							 BlockNumber *totalpages)
 {

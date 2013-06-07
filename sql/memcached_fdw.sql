@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- *                foreign-data wrapper  blackhole
+ *                foreign-data wrapper  memcached
  *
  * Copyright (c) 2013, PostgreSQL Global Development Group
  *
@@ -9,21 +9,21 @@
  * Author:  Andrew Dunstan <andrew@dunslane.net>
  *
  * IDENTIFICATION
- *                blackhole_fdw/=sql/blackhole_fdw.sql
+ *                memcached_fdw/=sql/memcached_fdw.sql
  *
  *-------------------------------------------------------------------------
  */
 
-CREATE FUNCTION blackhole_fdw_handler()
+CREATE FUNCTION memcached_fdw_handler()
 RETURNS fdw_handler
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
-CREATE FUNCTION blackhole_fdw_validator(text[], oid)
+CREATE FUNCTION memcached_fdw_validator(text[], oid)
 RETURNS void
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT;
 
-CREATE FOREIGN DATA WRAPPER blackhole_fdw
-  HANDLER blackhole_fdw_handler
-  VALIDATOR blackhole_fdw_validator;
+CREATE FOREIGN DATA WRAPPER memcached_fdw
+  HANDLER memcached_fdw_handler
+  VALIDATOR memcached_fdw_validator;

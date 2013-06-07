@@ -1,20 +1,20 @@
 ##############################################################################
 #
-# Blackhole Foreign Data Wrapper for PostgreSQL
-# 
+# Memcached Foreign Data Wrapper for PostgreSQL
+#
 # Copyright (c) 2013 Andrew Dunstan
-# 
+#
 # This software is released under the PostgreSQL Licence
-# 
+#
 # Author: Andrew Dunstan <andrew@dunslane.net>
-# 
+#
 # IDENTIFICATION
-#        blackhole_fdw/Makefile
-# 
+#        memcached_fdw/Makefile
+#
 ##############################################################################
 
 
-EXTENSION    = blackhole_fdw
+EXTENSION    = memcached_fdw
 EXTVERSION   = $(shell grep default_version $(EXTENSION).control | sed -e "s/default_version[[:space:]]*=[[:space:]]*'\([^']*\)'/\1/")
 
 DATA         = $(filter-out $(wildcard sql/*--*.sql),$(wildcard sql/*.sql))
