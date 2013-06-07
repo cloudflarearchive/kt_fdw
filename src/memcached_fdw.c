@@ -23,6 +23,32 @@
 #include "optimizer/planmain.h"
 #include "optimizer/restrictinfo.h"
 
+#include "catalog/pg_foreign_server.h"
+#include "catalog/pg_foreign_table.h"
+#include "catalog/pg_user_mapping.h"
+#include "catalog/pg_type.h"
+
+
+#include "funcapi.h"
+#include "access/reloptions.h"
+#include "catalog/pg_foreign_server.h"
+#include "catalog/pg_foreign_table.h"
+#include "catalog/pg_user_mapping.h"
+#include "catalog/pg_type.h"
+#include "commands/defrem.h"
+#include "commands/explain.h"
+#include "foreign/fdwapi.h"
+#include "foreign/foreign.h"
+#include "miscadmin.h"
+#include "mb/pg_wchar.h"
+#include "optimizer/cost.h"
+#include "optimizer/pathnode.h"
+#include "optimizer/planmain.h"
+#include "optimizer/restrictinfo.h"
+#include "storage/fd.h"
+#include "utils/array.h"
+#include "utils/builtins.h"
+#include "utils/rel.h"
 PG_MODULE_MAGIC;
 
 /*
@@ -106,8 +132,8 @@ static bool memcachedAnalyzeForeignTable(Relation relation,
 							 AcquireSampleRowsFunc *func,
 							 BlockNumber *totalpages);
 
-/* 
- * structures used by the FDW 
+/*
+ * structures used by the FDW
  *
  * These next two are not actualkly used by memcached, but something like this
  * will be needed by anything more complicated that does actual work.
@@ -123,8 +149,25 @@ struct memcachedFdwOption
 	Oid			optcontext;		/* Oid of catalog in which option may appear */
 };
 
+static struct memcachedFdwOption valid_options[] =
+{
+	/* Connection options */
+	{"server_addresses", ForeignServerRelationId},
+	{"username", UserMappingRelationId},
+	{"password", UserMappingRelationId},
+	/* Sentinel */
+	{NULL, InvalidOid}
+};
+
+
+typedef struct memcachedTableOptions
+{
+  char *server_addresses;
+  char *username;
+  char *password;
+} memcachedTableOptions;
 /*
- * This is what will be set and stashed away in fdw_private and fetched 
+ * This is what will be set and stashed away in fdw_private and fetched
  * for subsequent routines.
  */
 typedef struct
@@ -172,28 +215,110 @@ memcached_fdw_handler(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(fdwroutine);
 }
 
+static bool isValidOption(const char *option, Oid context)
+{
+	struct memcachedFdwOption *opt;
+
+#ifdef DEBUG
+	elog(NOTICE, "isValidOption");
+#endif
+
+	for (opt = valid_options; opt->optname; opt++)
+	{
+		if (context == opt->optcontext && strcmp(opt->optname, option) == 0)
+			return true;
+	}
+	return false;
+}
+
 Datum
 memcached_fdw_validator(PG_FUNCTION_ARGS)
 {
 	List	   *options_list = untransformRelOptions(PG_GETARG_DATUM(0));
+  Oid catalog = PG_GETARG_OID(0);
+  ListCell *cell;
 
-	elog(DEBUG1,"entering function %s",__func__);
+  /* used for detecting duplicates; does not remember vals */
+  struct memcachedTableOptions table_options;
 
-	/* make sure the options are valid */
+  elog(DEBUG1,"entering function %s",__func__);
 
-	/* no options are supported */
+  table_options.server_addresses = NULL;
+  table_options.username = NULL;
+  table_options.password = NULL;
 
-	if (list_length(options_list) > 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
-				 errmsg("invalid options"),
-				 errhint("Memcached FDW doies not support any options")));
+
+  foreach(cell, options_list)
+  {
+    DefElem *def = (DefElem*) lfirst(cell);
+
+    /*check that this is in the list of known options*/
+    if(!isValidOption(def->defname, catalog))
+    {
+      struct memcachedFdwOption *opt;
+			StringInfoData buf;
+			/*
+			 * Unknown option specified, complain about it. Provide a hint
+			 * with list of valid options for the object.
+			 */
+			initStringInfo(&buf);
+			for (opt = valid_options; opt->optname; opt++)
+			{
+				if (catalog == opt->optcontext)
+					appendStringInfo(&buf, "%s%s", (buf.len > 0) ? ", " : "",
+									 opt->optname);
+			}
+
+			ereport(ERROR,
+					(errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
+					 errmsg("invalid option \"%s\"", def->defname),
+					 errhint("Valid options in this context are: %s",
+							 buf.len ? buf.data : "<none>")
+					 ));
+    }
+
+
+    /*make sure options don't repeat */
+
+    if(strcmp(def->defname, "server_addresses") == 0)
+    {
+    if (table_options.server_addresses)
+				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
+								errmsg("conflicting or redundant options: "
+									   "server_addresses (%s)", defGetString(def))
+								));
+
+			table_options.server_addresses = defGetString(def);
+    }
+
+    if(strcmp(def->defname, "username") == 0)
+    {
+    if (table_options.username)
+				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
+								errmsg("conflicting or redundant options: "
+									   "username (%s)", defGetString(def))
+								));
+
+			table_options.username = defGetString(def);
+    }
+
+    if(strcmp(def->defname, "password") == 0)
+    {
+    if (table_options.password)
+				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
+								errmsg("conflicting or redundant options: "
+									   "password (%s)", defGetString(def))
+								));
+
+			table_options.password = defGetString(def);
+    }
+  }
+
 
 	PG_RETURN_VOID();
 }
 
-static void
-memcachedGetForeignRelSize(PlannerInfo *root,
+static void memcachedGetForeignRelSize(PlannerInfo *root,
 						   RelOptInfo *baserel,
 						   Oid foreigntableid)
 {
