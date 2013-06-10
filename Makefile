@@ -1,6 +1,6 @@
 ##############################################################################
 #
-# Memcached Foreign Data Wrapper for PostgreSQL
+# Kt Foreign Data Wrapper for PostgreSQL
 #
 # Copyright (c) 2013 Andrew Dunstan
 #
@@ -9,12 +9,12 @@
 # Author: Andrew Dunstan <andrew@dunslane.net>
 #
 # IDENTIFICATION
-#        memcached_fdw/Makefile
+#        kt_fdw/Makefile
 #
 ##############################################################################
 
 
-EXTENSION    = memcached_fdw
+EXTENSION    = kt_fdw
 EXTVERSION   = $(shell grep default_version $(EXTENSION).control | sed -e "s/default_version[[:space:]]*=[[:space:]]*'\([^']*\)'/\1/")
 
 DATA         = $(filter-out $(wildcard sql/*--*.sql),$(wildcard sql/*.sql))
@@ -27,7 +27,7 @@ REGRESS_OPTS = --inputdir=test --outputdir=test \
 MODULE_big      = $(EXTENSION)
 OBJS         =  $(patsubst %.c,%.o,$(wildcard src/*.c))
 PG_CONFIG    = /usr/local/pgsql/bin/pg_config
-SHLIB_LINK = -lmemcached -lsasl2
+SHLIB_LINK = -lkyototycoon -lsasl2
 
 
 all: sql/$(EXTENSION)--$(EXTVERSION).sql

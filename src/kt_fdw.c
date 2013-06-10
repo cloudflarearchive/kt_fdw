@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- * Memcached Foreign Data Wrapper for PostgreSQL
+ * Kt Foreign Data Wrapper for PostgreSQL
  *
  * Copyright (c) 2013 Andrew Dunstan
  *
@@ -9,7 +9,7 @@
  * Author: Andrew Dunstan <andrew@dunslane.net>
  *
  * IDENTIFICATION
- *        memcached_fdw/src/memcached_fdw.c
+ *        kt_fdw/src/kt_fdw.c
  *
  *-------------------------------------------------------------------------
  */
@@ -49,93 +49,96 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
+
 PG_MODULE_MAGIC;
 
 /*
  * SQL functions
  */
-extern Datum memcached_fdw_handler(PG_FUNCTION_ARGS);
-extern Datum memcached_fdw_validator(PG_FUNCTION_ARGS);
+extern Datum kt_fdw_handler(PG_FUNCTION_ARGS);
+extern Datum kt_fdw_validator(PG_FUNCTION_ARGS);
 
-PG_FUNCTION_INFO_V1(memcached_fdw_handler);
-PG_FUNCTION_INFO_V1(memcached_fdw_validator);
+PG_FUNCTION_INFO_V1(kt_fdw_handler);
+PG_FUNCTION_INFO_V1(kt_fdw_validator);
 
 
 /* callback functions */
-static void memcachedGetForeignRelSize(PlannerInfo *root,
+static void ktGetForeignRelSize(PlannerInfo *root,
 						   RelOptInfo *baserel,
 						   Oid foreigntableid);
 
-static void memcachedGetForeignPaths(PlannerInfo *root,
+static void ktGetForeignPaths(PlannerInfo *root,
 						 RelOptInfo *baserel,
 						 Oid foreigntableid);
 
-static ForeignScan *memcachedGetForeignPlan(PlannerInfo *root,
+static ForeignScan *ktGetForeignPlan(PlannerInfo *root,
 						RelOptInfo *baserel,
 						Oid foreigntableid,
 						ForeignPath *best_path,
 						List *tlist,
 						List *scan_clauses);
 
-static void memcachedBeginForeignScan(ForeignScanState *node,
+static void ktBeginForeignScan(ForeignScanState *node,
 						  int eflags);
 
-static TupleTableSlot *memcachedIterateForeignScan(ForeignScanState *node);
+static TupleTableSlot *ktIterateForeignScan(ForeignScanState *node);
 
-static void memcachedReScanForeignScan(ForeignScanState *node);
+static void ktReScanForeignScan(ForeignScanState *node);
 
-static void memcachedEndForeignScan(ForeignScanState *node);
+static void ktEndForeignScan(ForeignScanState *node);
 
-static void memcachedAddForeignUpdateTargets(Query *parsetree,
+static void ktAddForeignUpdateTargets(Query *parsetree,
 								 RangeTblEntry *target_rte,
 								 Relation target_relation);
 
-static List *memcachedPlanForeignModify(PlannerInfo *root,
+static List *ktPlanForeignModify(PlannerInfo *root,
 						   ModifyTable *plan,
 						   Index resultRelation,
 						   int subplan_index);
 
-static void memcachedBeginForeignModify(ModifyTableState *mtstate,
+static void ktBeginForeignModify(ModifyTableState *mtstate,
 							ResultRelInfo *rinfo,
 							List *fdw_private,
 							int subplan_index,
 							int eflags);
 
-static TupleTableSlot *memcachedExecForeignInsert(EState *estate,
+static TupleTableSlot *ktExecForeignInsert(EState *estate,
 						   ResultRelInfo *rinfo,
 						   TupleTableSlot *slot,
 						   TupleTableSlot *planSlot);
 
-static TupleTableSlot *memcachedExecForeignUpdate(EState *estate,
+static TupleTableSlot *ktExecForeignUpdate(EState *estate,
 						   ResultRelInfo *rinfo,
 						   TupleTableSlot *slot,
 						   TupleTableSlot *planSlot);
 
-static TupleTableSlot *memcachedExecForeignDelete(EState *estate,
+static TupleTableSlot *ktExecForeignDelete(EState *estate,
 						   ResultRelInfo *rinfo,
 						   TupleTableSlot *slot,
 						   TupleTableSlot *planSlot);
 
-static void memcachedEndForeignModify(EState *estate,
+static void ktEndForeignModify(EState *estate,
 						  ResultRelInfo *rinfo);
 
-static void memcachedExplainForeignScan(ForeignScanState *node,
+static void ktExplainForeignScan(ForeignScanState *node,
 							struct ExplainState *es);
 
-static void memcachedExplainForeignModify(ModifyTableState *mtstate,
+static void ktExplainForeignModify(ModifyTableState *mtstate,
 							  ResultRelInfo *rinfo,
 							  List *fdw_private,
 							  int subplan_index,
 							  struct ExplainState *es);
 
-static bool memcachedAnalyzeForeignTable(Relation relation,
+static bool ktAnalyzeForeignTable(Relation relation,
 							 AcquireSampleRowsFunc *func,
 							 BlockNumber *totalpages);
+
+
 
 /*
  * structures used by the FDW
  *
- * These next two are not actualkly used by memcached, but something like this
+ * These next two are not actualkly used by kt, but something like this
  * will be needed by anything more complicated that does actual work.
  *
  */
@@ -143,13 +146,13 @@ static bool memcachedAnalyzeForeignTable(Relation relation,
 /*
  * Describes the valid options for objects that use this wrapper.
  */
-struct memcachedFdwOption
+struct ktFdwOption
 {
 	const char *optname;
 	Oid			optcontext;		/* Oid of catalog in which option may appear */
 };
 
-static struct memcachedFdwOption valid_options[] =
+static struct ktFdwOption valid_options[] =
 {
 	/* Connection options */
 	{"server_addresses", ForeignServerRelationId},
@@ -160,25 +163,25 @@ static struct memcachedFdwOption valid_options[] =
 };
 
 
-typedef struct memcachedTableOptions
+typedef struct ktTableOptions
 {
   char *server_addresses;
   char *username;
   char *password;
-} memcachedTableOptions;
+} ktTableOptions;
 /*
  * This is what will be set and stashed away in fdw_private and fetched
  * for subsequent routines.
  */
 typedef struct
 {
-	char	   *foo;
-	int			bar;
-}	MemcachedFdwPlanState;
+	ktTableOptions opt;
+}	KtFdwPlanState;
 
+void initTableOptions(struct ktTableOptions *table_options);
 
 Datum
-memcached_fdw_handler(PG_FUNCTION_ARGS)
+kt_fdw_handler(PG_FUNCTION_ARGS)
 {
 	FdwRoutine *fdwroutine = makeNode(FdwRoutine);
 
@@ -187,37 +190,37 @@ memcached_fdw_handler(PG_FUNCTION_ARGS)
 	/* assign the handlers for the FDW */
 
 	/* these are required */
-	fdwroutine->GetForeignRelSize = memcachedGetForeignRelSize;
-	fdwroutine->GetForeignPaths = memcachedGetForeignPaths;
-	fdwroutine->GetForeignPlan = memcachedGetForeignPlan;
-	fdwroutine->BeginForeignScan = memcachedBeginForeignScan;
-	fdwroutine->IterateForeignScan = memcachedIterateForeignScan;
-	fdwroutine->ReScanForeignScan = memcachedReScanForeignScan;
-	fdwroutine->EndForeignScan = memcachedEndForeignScan;
+	fdwroutine->GetForeignRelSize = ktGetForeignRelSize;
+	fdwroutine->GetForeignPaths = ktGetForeignPaths;
+	fdwroutine->GetForeignPlan = ktGetForeignPlan;
+	fdwroutine->BeginForeignScan = ktBeginForeignScan;
+	fdwroutine->IterateForeignScan = ktIterateForeignScan;
+	fdwroutine->ReScanForeignScan = ktReScanForeignScan;
+	fdwroutine->EndForeignScan = ktEndForeignScan;
 
 	/* remainder are optional - use NULL if not required */
 	/* support for insert / update / delete */
-	fdwroutine->AddForeignUpdateTargets = memcachedAddForeignUpdateTargets;
-	fdwroutine->PlanForeignModify = memcachedPlanForeignModify;
-	fdwroutine->BeginForeignModify = memcachedBeginForeignModify;
-	fdwroutine->ExecForeignInsert = memcachedExecForeignInsert;
-	fdwroutine->ExecForeignUpdate = memcachedExecForeignUpdate;
-	fdwroutine->ExecForeignDelete = memcachedExecForeignDelete;
-	fdwroutine->EndForeignModify = memcachedEndForeignModify;
+	fdwroutine->AddForeignUpdateTargets = ktAddForeignUpdateTargets;
+	fdwroutine->PlanForeignModify = ktPlanForeignModify;
+	fdwroutine->BeginForeignModify = ktBeginForeignModify;
+	fdwroutine->ExecForeignInsert = ktExecForeignInsert;
+	fdwroutine->ExecForeignUpdate = ktExecForeignUpdate;
+	fdwroutine->ExecForeignDelete = ktExecForeignDelete;
+	fdwroutine->EndForeignModify = ktEndForeignModify;
 
 	/* support for EXPLAIN */
-	fdwroutine->ExplainForeignScan = memcachedExplainForeignScan;
-	fdwroutine->ExplainForeignModify = memcachedExplainForeignModify;
+	fdwroutine->ExplainForeignScan = ktExplainForeignScan;
+	fdwroutine->ExplainForeignModify = ktExplainForeignModify;
 
 	/* support for ANALYSE */
-	fdwroutine->AnalyzeForeignTable = memcachedAnalyzeForeignTable;
+	fdwroutine->AnalyzeForeignTable = ktAnalyzeForeignTable;
 
 	PG_RETURN_POINTER(fdwroutine);
 }
 
 static bool isValidOption(const char *option, Oid context)
 {
-	struct memcachedFdwOption *opt;
+	struct ktFdwOption *opt;
 
 #ifdef DEBUG
 	elog(NOTICE, "isValidOption");
@@ -231,21 +234,77 @@ static bool isValidOption(const char *option, Oid context)
 	return false;
 }
 
+void initTableOptions(struct ktTableOptions *table_options)
+{
+  table_options->server_addresses = NULL;
+  table_options->username = NULL;
+  table_options->password = NULL;
+}
+
+static void
+getTableOptions(Oid foreigntableid,struct ktTableOptions *table_options)
+{
+	ForeignTable *table;
+	ForeignServer *server;
+	UserMapping *mapping;
+	List	   *options;
+	ListCell   *lc;
+
+#ifdef DEBUG
+	elog(NOTICE, "getTableOptions");
+#endif
+
+	/*
+	 * Extract options from FDW objects. We only need to worry about server
+	 * options for Redis
+	 *
+	 */
+	table = GetForeignTable(foreigntableid);
+	server = GetForeignServer(table->serverid);
+	mapping = GetUserMapping(GetUserId(), table->serverid);
+
+	options = NIL;
+	options = list_concat(options, table->options);
+	options = list_concat(options, server->options);
+	options = list_concat(options, mapping->options);
+
+//	table_options->table_type = PG_REDIS_SCALAR_TABLE;
+
+	/* Loop through the options, and get the server/port */
+	foreach(lc, options)
+	{
+		DefElem    *def = (DefElem *) lfirst(lc);
+
+		if (strcmp(def->defname, "server_addresses") == 0)
+			table_options->server_addresses = defGetString(def);
+
+		if (strcmp(def->defname, "username") == 0)
+			table_options->username = defGetString(def);
+
+		if (strcmp(def->defname, "password") == 0)
+			table_options->password = defGetString(def);
+	}
+
+	/* Default values, if required */
+	if (!table_options->server_addresses)
+		table_options->server_addresses = "127.0.0.1:11211";
+}
+
+
+
 Datum
-memcached_fdw_validator(PG_FUNCTION_ARGS)
+kt_fdw_validator(PG_FUNCTION_ARGS)
 {
 	List	   *options_list = untransformRelOptions(PG_GETARG_DATUM(0));
   Oid catalog = PG_GETARG_OID(0);
   ListCell *cell;
 
   /* used for detecting duplicates; does not remember vals */
-  struct memcachedTableOptions table_options;
+  struct ktTableOptions table_options;
 
   elog(DEBUG1,"entering function %s",__func__);
 
-  table_options.server_addresses = NULL;
-  table_options.username = NULL;
-  table_options.password = NULL;
+  initTableOptions(&table_options);
 
 
   foreach(cell, options_list)
@@ -255,7 +314,7 @@ memcached_fdw_validator(PG_FUNCTION_ARGS)
     /*check that this is in the list of known options*/
     if(!isValidOption(def->defname, catalog))
     {
-      struct memcachedFdwOption *opt;
+      struct ktFdwOption *opt;
 			StringInfoData buf;
 			/*
 			 * Unknown option specified, complain about it. Provide a hint
@@ -318,7 +377,7 @@ memcached_fdw_validator(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-static void memcachedGetForeignRelSize(PlannerInfo *root,
+static void ktGetForeignRelSize(PlannerInfo *root,
 						   RelOptInfo *baserel,
 						   Oid foreigntableid)
 {
@@ -339,21 +398,25 @@ static void memcachedGetForeignRelSize(PlannerInfo *root,
 	 * can compute a better estimate of the average result row width.
 	 */
 
-	MemcachedFdwPlanState *fdw_private;
+	KtFdwPlanState *fdw_private;
+  ktTableOptions table_options;
 
 	elog(DEBUG1,"entering function %s",__func__);
 
 	baserel->rows = 0;
 
-	fdw_private = palloc0(sizeof(MemcachedFdwPlanState));
+	fdw_private = palloc0(sizeof(KtFdwPlanState));
 	baserel->fdw_private = (void *) fdw_private;
+
+  initTableOptions(&table_options);
+  getTableOptions(foreigntableid, &table_options);
 
 	/* initialize reuired state in fdw_private */
 
 }
 
 static void
-memcachedGetForeignPaths(PlannerInfo *root,
+ktGetForeignPaths(PlannerInfo *root,
 						 RelOptInfo *baserel,
 						 Oid foreigntableid)
 {
@@ -373,7 +436,7 @@ memcachedGetForeignPaths(PlannerInfo *root,
 	 */
 
 	/*
-	 * MemcachedFdwPlanState *fdw_private = baserel->fdw_private;
+	 * KtFdwPlanState *fdw_private = baserel->fdw_private;
 	 */
 
 	Cost		startup_cost,
@@ -398,7 +461,7 @@ memcachedGetForeignPaths(PlannerInfo *root,
 
 
 static ForeignScan *
-memcachedGetForeignPlan(PlannerInfo *root,
+ktGetForeignPlan(PlannerInfo *root,
 						RelOptInfo *baserel,
 						Oid foreigntableid,
 						ForeignPath *best_path,
@@ -442,7 +505,7 @@ memcachedGetForeignPlan(PlannerInfo *root,
 
 
 static void
-memcachedBeginForeignScan(ForeignScanState *node,
+ktBeginForeignScan(ForeignScanState *node,
 						  int eflags)
 {
 	/*
@@ -470,7 +533,7 @@ memcachedBeginForeignScan(ForeignScanState *node,
 
 
 static TupleTableSlot *
-memcachedIterateForeignScan(ForeignScanState *node)
+ktIterateForeignScan(ForeignScanState *node)
 {
 	/*
 	 * Fetch one row from the foreign source, returning it in a tuple table
@@ -498,7 +561,7 @@ memcachedIterateForeignScan(ForeignScanState *node)
 
 
 	/*
-	 * MemcachedFdwExecutionState *festate = (MemcachedFdwExecutionState *)
+	 * KtFdwExecutionState *festate = (KtFdwExecutionState *)
 	 * node->fdw_state;
 	 */
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
@@ -515,7 +578,7 @@ memcachedIterateForeignScan(ForeignScanState *node)
 
 
 static void
-memcachedReScanForeignScan(ForeignScanState *node)
+ktReScanForeignScan(ForeignScanState *node)
 {
 	/*
 	 * Restart the scan from the beginning. Note that any parameters the scan
@@ -529,7 +592,7 @@ memcachedReScanForeignScan(ForeignScanState *node)
 
 
 static void
-memcachedEndForeignScan(ForeignScanState *node)
+ktEndForeignScan(ForeignScanState *node)
 {
 	/*
 	 * End the scan and release resources. It is normally not important to
@@ -543,7 +606,7 @@ memcachedEndForeignScan(ForeignScanState *node)
 
 
 static void
-memcachedAddForeignUpdateTargets(Query *parsetree,
+ktAddForeignUpdateTargets(Query *parsetree,
 								 RangeTblEntry *target_rte,
 								 Relation target_relation)
 {
@@ -580,7 +643,7 @@ memcachedAddForeignUpdateTargets(Query *parsetree,
 
 
 static List *
-memcachedPlanForeignModify(PlannerInfo *root,
+ktPlanForeignModify(PlannerInfo *root,
 						   ModifyTable *plan,
 						   Index resultRelation,
 						   int subplan_index)
@@ -612,7 +675,7 @@ memcachedPlanForeignModify(PlannerInfo *root,
 
 
 static void
-memcachedBeginForeignModify(ModifyTableState *mtstate,
+ktBeginForeignModify(ModifyTableState *mtstate,
 							ResultRelInfo *rinfo,
 							List *fdw_private,
 							int subplan_index,
@@ -650,7 +713,7 @@ memcachedBeginForeignModify(ModifyTableState *mtstate,
 
 
 static TupleTableSlot *
-memcachedExecForeignInsert(EState *estate,
+ktExecForeignInsert(EState *estate,
 						   ResultRelInfo *rinfo,
 						   TupleTableSlot *slot,
 						   TupleTableSlot *planSlot)
@@ -689,7 +752,7 @@ memcachedExecForeignInsert(EState *estate,
 
 
 static TupleTableSlot *
-memcachedExecForeignUpdate(EState *estate,
+ktExecForeignUpdate(EState *estate,
 						   ResultRelInfo *rinfo,
 						   TupleTableSlot *slot,
 						   TupleTableSlot *planSlot)
@@ -728,7 +791,7 @@ memcachedExecForeignUpdate(EState *estate,
 
 
 static TupleTableSlot *
-memcachedExecForeignDelete(EState *estate,
+ktExecForeignDelete(EState *estate,
 						   ResultRelInfo *rinfo,
 						   TupleTableSlot *slot,
 						   TupleTableSlot *planSlot)
@@ -764,7 +827,7 @@ memcachedExecForeignDelete(EState *estate,
 
 
 static void
-memcachedEndForeignModify(EState *estate,
+ktEndForeignModify(EState *estate,
 						  ResultRelInfo *rinfo)
 {
 	/*
@@ -782,7 +845,7 @@ memcachedEndForeignModify(EState *estate,
 
 
 static void
-memcachedExplainForeignScan(ForeignScanState *node,
+ktExplainForeignScan(ForeignScanState *node,
 							struct ExplainState *es)
 {
 	/*
@@ -802,7 +865,7 @@ memcachedExplainForeignScan(ForeignScanState *node,
 
 
 static void
-memcachedExplainForeignModify(ModifyTableState *mtstate,
+ktExplainForeignModify(ModifyTableState *mtstate,
 							  ResultRelInfo *rinfo,
 							  List *fdw_private,
 							  int subplan_index,
@@ -826,7 +889,7 @@ memcachedExplainForeignModify(ModifyTableState *mtstate,
 
 
 static bool
-memcachedAnalyzeForeignTable(Relation relation,
+ktAnalyzeForeignTable(Relation relation,
 							 AcquireSampleRowsFunc *func,
 							 BlockNumber *totalpages)
 {
