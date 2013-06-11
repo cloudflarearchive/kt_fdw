@@ -1,5 +1,5 @@
-# memcached FDW
-comment = 'Memcached Foreign Data Wrapper'
+# kt FDW
+comment = 'Kt Foreign Data Wrapper'
 default_version = '0.0.1'
-module_pathname = '$libdir/memcached_fdw'
+module_pathname = '$libdir/kt_fdw'
 relocatable = true

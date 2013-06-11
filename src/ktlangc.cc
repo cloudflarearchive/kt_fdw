@@ -15,11 +15,11 @@
 
 #include <ktremotedb.h>
 #include "ktlangc.h"
-#include "postgres.h"
 
 using namespace kyototycoon;
 
 extern "C" {
+#include "postgres.h"
 
 /**
  * Create a database object.
