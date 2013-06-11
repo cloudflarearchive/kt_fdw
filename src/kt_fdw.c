@@ -50,6 +50,8 @@
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/rel.h"
+#include "utils/lsyscache.h"
+#include "nodes/makefuncs.h"
 
 PG_MODULE_MAGIC;
 
@@ -186,6 +188,11 @@ typedef struct {
   AttInMetadata *attinmeta;
 } KtFdwExecState;
 
+typedef struct {
+  Relation rel;
+  FmgrInfo *key_info;
+
+} KtFdwModifyState;
 
 void initTableOptions(struct ktTableOptions *table_options);
 
@@ -720,7 +727,29 @@ ktAddForeignUpdateTargets(Query *parsetree,
 	 * relies on an unchanging primary key to identify rows.)
 	 */
 
-	elog(DEBUG1,"entering function %s",__func__);
+  Form_pg_attribute attr;
+  Var *varnode;
+  const char *attrname;
+  TargetEntry * tle;
+
+
+  elog(DEBUG1,"entering function %s",__func__);
+
+  attr = RelationGetDescr(target_relation)->attrs[0];
+
+             varnode = makeVar(parsetree->resultRelation,
+                 attr->attnum,
+                 attr->atttypid, attr->atttypmod,
+                                attr->attcollation,
+                               0);
+  /* Wrap it in a resjunk TLE with the right name ... */
+  attrname = "key";
+  tle = makeTargetEntry((Expr *) varnode,
+    list_length(parsetree->targetList) + 1,
+    pstrdup(attrname),true);
+
+  /* ... and add it to the query's targetlist */
+  parsetree->targetList = lappend(parsetree->targetList, tle);
 
 }
 
@@ -789,9 +818,25 @@ ktBeginForeignModify(ModifyTableState *mtstate,
 	 * If the BeginForeignModify pointer is set to NULL, no action is taken
 	 * during executor startup.
 	 */
+  Relation    rel = rinfo->ri_RelationDesc;
+  KtFdwModifyState *fmstate;
+  Form_pg_attribute attr;
+  Oid typefnoid;
+  bool isvarlena;
 
 	elog(DEBUG1,"entering function %s",__func__);
 
+  fmstate = (KtFdwModifyState *) palloc0(sizeof(KtFdwModifyState));
+  fmstate->rel = rel;
+  fmstate->key_info = (FmgrInfo *) palloc0(sizeof(FmgrInfo));
+
+  attr = RelationGetDescr(rel)->attrs[0];
+  Assert(!attr->attisdropped);
+
+  getTypeOutputInfo(attr->atttypid, &typefnoid, &isvarlena);
+  fmgr_info(typefnoid, fmstate->key_info);
+
+  rinfo->ri_FdwState=fmstate;
 }
 
 
@@ -828,8 +873,20 @@ ktExecForeignInsert(EState *estate,
 	 *
 	 */
 
+  char * key_value;
+  Datum value;
+  bool isnull;
+  KtFdwModifyState *fmstate = (KtFdwModifyState *) rinfo->ri_FdwState;
+
 	elog(DEBUG1,"entering function %s",__func__);
 
+  value = slot_getattr(planSlot, 1, &isnull);
+  if(isnull)
+    elog(ERROR, "can't get key value");
+
+  key_value = OutputFunctionCall(fmstate->key_info, value);
+
+  elog(ERROR, "2Key value is %s", key_value);
 	return slot;
 }
 
@@ -903,7 +960,21 @@ ktExecForeignDelete(EState *estate,
 	 * from the foreign table will fail with an error message.
 	 */
 
-	elog(DEBUG1,"entering function %s",__func__);
+  char * key_value;
+  Datum value;
+  bool isnull;
+  KtFdwModifyState *fmstate = (KtFdwModifyState *) rinfo->ri_FdwState;
+
+  elog(DEBUG1,"entering function %s",__func__);
+
+  value = slot_getattr(planSlot, 1, &isnull);
+  if(isnull)
+    elog(ERROR, "can't get key value");
+
+  key_value = OutputFunctionCall(fmstate->key_info, value);
+
+  elog(ERROR, "Key value is %s", key_value);
+
 
 	return slot;
 }
