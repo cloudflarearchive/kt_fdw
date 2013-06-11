@@ -15,6 +15,7 @@
  */
 
 #include "postgres.h"
+#include "ktlangc.h"
 
 #include "access/reloptions.h"
 #include "foreign/fdwapi.h"
@@ -155,9 +156,9 @@ struct ktFdwOption
 static struct ktFdwOption valid_options[] =
 {
 	/* Connection options */
-	{"server_addresses", ForeignServerRelationId},
-	{"username", UserMappingRelationId},
-	{"password", UserMappingRelationId},
+	{"host", ForeignServerRelationId},
+	{"port", ForeignServerRelationId },
+	{"timeout",  ForeignServerRelationId},
 	/* Sentinel */
 	{NULL, InvalidOid}
 };
@@ -165,9 +166,9 @@ static struct ktFdwOption valid_options[] =
 
 typedef struct ktTableOptions
 {
-  char *server_addresses;
-  char *username;
-  char *password;
+  char *host;
+  int32_t port;
+  double timeout;
 } ktTableOptions;
 /*
  * This is what will be set and stashed away in fdw_private and fetched
@@ -175,8 +176,16 @@ typedef struct ktTableOptions
  */
 typedef struct
 {
-	ktTableOptions opt;
+  ktTableOptions opt;
 }	KtFdwPlanState;
+
+typedef struct {
+  KtFdwPlanState plan;
+  KTCUR* cur;
+  KTDB* db;
+  AttInMetadata *attinmeta;
+} KtFdwExecState;
+
 
 void initTableOptions(struct ktTableOptions *table_options);
 
@@ -236,9 +245,9 @@ static bool isValidOption(const char *option, Oid context)
 
 void initTableOptions(struct ktTableOptions *table_options)
 {
-  table_options->server_addresses = NULL;
-  table_options->username = NULL;
-  table_options->password = NULL;
+  table_options->host = NULL;
+  table_options->port = 0;
+  table_options->timeout = 0;
 }
 
 static void
@@ -275,19 +284,23 @@ getTableOptions(Oid foreigntableid,struct ktTableOptions *table_options)
 	{
 		DefElem    *def = (DefElem *) lfirst(lc);
 
-		if (strcmp(def->defname, "server_addresses") == 0)
-			table_options->server_addresses = defGetString(def);
+		if (strcmp(def->defname, "host") == 0)
+			table_options->host = defGetString(def);
 
-		if (strcmp(def->defname, "username") == 0)
-			table_options->username = defGetString(def);
+		if (strcmp(def->defname, "port") == 0)
+			table_options->port = atoi(defGetString(def));
 
-		if (strcmp(def->defname, "password") == 0)
-			table_options->password = defGetString(def);
+		if (strcmp(def->defname, "timeout") == 0)
+			table_options->timeout = atoi(defGetString(def));
 	}
 
 	/* Default values, if required */
-	if (!table_options->server_addresses)
-		table_options->server_addresses = "127.0.0.1:11211";
+	if (!table_options->host)
+		table_options->host = "127.0.0.1";
+  if(!table_options->port)
+    table_options->port = 1978;
+  if(!table_options->timeout)
+    table_options->timeout = -1; //no timeout
 }
 
 
@@ -339,37 +352,37 @@ kt_fdw_validator(PG_FUNCTION_ARGS)
 
     /*make sure options don't repeat */
 
-    if(strcmp(def->defname, "server_addresses") == 0)
+    if(strcmp(def->defname, "host") == 0)
     {
-    if (table_options.server_addresses)
+    if (table_options.host)
 				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
 								errmsg("conflicting or redundant options: "
-									   "server_addresses (%s)", defGetString(def))
+									   "host (%s)", defGetString(def))
 								));
 
-			table_options.server_addresses = defGetString(def);
+			table_options.host = defGetString(def);
     }
 
-    if(strcmp(def->defname, "username") == 0)
+    if(strcmp(def->defname, "port") == 0)
     {
-    if (table_options.username)
+    if (table_options.port)
 				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
 								errmsg("conflicting or redundant options: "
-									   "username (%s)", defGetString(def))
+									   "port (%s)", defGetString(def))
 								));
 
-			table_options.username = defGetString(def);
+			table_options.port = atoi(defGetString(def));
     }
 
-    if(strcmp(def->defname, "password") == 0)
+    if(strcmp(def->defname, "timeout") == 0)
     {
-    if (table_options.password)
+    if (table_options.timeout)
 				ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
 								errmsg("conflicting or redundant options: "
-									   "password (%s)", defGetString(def))
+									   "timeout (%s)", defGetString(def))
 								));
 
-			table_options.password = defGetString(def);
+			table_options.timeout = atoi(defGetString(def));
     }
   }
 
@@ -399,19 +412,28 @@ static void ktGetForeignRelSize(PlannerInfo *root,
 	 */
 
 	KtFdwPlanState *fdw_private;
-  ktTableOptions table_options;
+  KTDB * db;
+  //ktTableOptions table_options;
 
 	elog(DEBUG1,"entering function %s",__func__);
 
 	baserel->rows = 0;
 
-	fdw_private = palloc0(sizeof(KtFdwPlanState));
+	fdw_private = palloc(sizeof(KtFdwPlanState));
 	baserel->fdw_private = (void *) fdw_private;
 
-  initTableOptions(&table_options);
-  getTableOptions(foreigntableid, &table_options);
+  initTableOptions(&(fdw_private->opt));
+  getTableOptions(foreigntableid, &(fdw_private->opt));
 
 	/* initialize reuired state in fdw_private */
+
+ db = ktdbnew();
+ ktdbopen(db, fdw_private->opt.host, fdw_private->opt.port, fdw_private->opt.timeout);
+
+ baserel->rows = ktdbcount(db);
+
+ ktdbclose(db);
+ ktdbdel(db);
 
 }
 
@@ -435,16 +457,22 @@ ktGetForeignPaths(PlannerInfo *root,
 	 * that is needed to identify the specific scan method intended.
 	 */
 
-	/*
-	 * KtFdwPlanState *fdw_private = baserel->fdw_private;
-	 */
+
+	 KtFdwPlanState *fdw_private = baserel->fdw_private;
 
 	Cost		startup_cost,
 				total_cost;
 
+
+
 	elog(DEBUG1,"entering function %s",__func__);
 
-	startup_cost = 0;
+	if (strcmp(fdw_private->opt.host, "127.0.0.1") == 0 ||
+		strcmp(fdw_private->opt.host, "localhost") == 0)
+		startup_cost = 10;
+	else
+		startup_cost = 25;
+
 	total_cost = startup_cost + baserel->rows;
 
 	/* Create a ForeignPath node and add it as only possible path */
@@ -527,7 +555,31 @@ ktBeginForeignScan(ForeignScanState *node,
 	 *
 	 */
 
+
+  KtFdwExecState *estate;
+
 	elog(DEBUG1,"entering function %s",__func__);
+
+  estate = (KtFdwExecState*) palloc(sizeof(KtFdwExecState));
+  estate->cur=NULL;
+  estate->db = NULL;
+  node->fdw_state = (void *) estate;
+
+  initTableOptions(&(estate->plan.opt));
+  getTableOptions(RelationGetRelid(node->ss.ss_currentRelation), &(estate->plan.opt));
+
+	/* initialize reuired state in fdw_private */
+
+ estate->db = ktdbnew();
+ ktdbopen(estate->db, estate->plan.opt.host, estate->plan.opt.port, estate->plan.opt.timeout);
+
+ /* OK, we connected. If this is an EXPLAIN, bail out now */
+	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
+		return;
+
+  estate->attinmeta = TupleDescGetAttInMetadata(node->ss.ss_currentRelation->rd_att);
+  estate->cur = get_cursor(estate->db);
+
 
 }
 
@@ -560,18 +612,34 @@ ktIterateForeignScan(ForeignScanState *node)
 	 */
 
 
-	/*
-	 * KtFdwExecutionState *festate = (KtFdwExecutionState *)
-	 * node->fdw_state;
-	 */
+
+	 KtFdwExecState *estate = (KtFdwExecState *) node->fdw_state;
+
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
+
+  bool found = false;
+  char * key;
+  char * value;
+  char ** values;
+  HeapTuple tuple;
 
 	elog(DEBUG1,"entering function %s",__func__);
 
 	ExecClearTuple(slot);
 
 	/* get the next record, if any, and fill in the slot */
+	/* Build the tuple */
 
+  found = next(estate->db, estate->cur, &key, &value);
+
+	if (found)
+	{
+    values = (char **) palloc(sizeof(char *) * 2);
+		values[0] = key;
+		values[1] = value;
+		tuple = BuildTupleFromCStrings(estate->attinmeta, values);
+		ExecStoreTuple(tuple, slot, InvalidBuffer, false);
+	}
 	/* then return the slot */
 	return slot;
 }
@@ -600,7 +668,22 @@ ktEndForeignScan(ForeignScanState *node)
 	 * remote servers should be cleaned up.
 	 */
 
+  KtFdwExecState *estate = (KtFdwExecState *) node->fdw_state;
+
 	elog(DEBUG1,"entering function %s",__func__);
+
+  if(estate)
+  {
+
+    if(estate->cur)
+      ktcurdel(estate->cur);
+
+    if(estate->db){
+      ktdbclose(estate->db);
+      ktdbdel(estate->db);
+    }
+
+  }
 
 }
 
