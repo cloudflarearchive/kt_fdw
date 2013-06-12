@@ -1,0 +1,87 @@
+create server kt_server foreign data wrapper kt_fdw;
+create foreign table kt_test (key text, value text) server kt_server;
+create user mapping for public server kt_server;
+delete from kt_test;
+insert into kt_test values ('key1', 'val1.1');
+insert into kt_test values ('key1', 'val1.1000');
+ERROR:  Error from kt: logical inconsistency
+insert into kt_test values ('key2', 'val2.1');
+insert into kt_test values ('key3', 'val3.1');
+insert into kt_test values ('key4', 'val4.1');
+select * from kt_test;
+ key  | value  
+------+--------
+ key2 | val2.1
+ key4 | val4.1
+ key3 | val3.1
+ key1 | val1.1
+(4 rows)
+
+update kt_test set value = 'val1.2' where key='key1';
+select value from kt_test where key='key1';
+ value  
+--------
+ val1.2
+(1 row)
+
+update kt_test set value = 'val1.2' where key='keynotexist';
+select value from kt_test where key='keynotexist';
+ value 
+-------
+(0 rows)
+
+select * from kt_test;
+ key  | value  
+------+--------
+ key2 | val2.1
+ key4 | val4.1
+ key3 | val3.1
+ key1 | val1.2
+(4 rows)
+
+delete from kt_test where key = 'key1';
+delete from kt_test where key = 'keynotexist';
+update kt_test set value = 'val1.2' where key='key1';
+select * from kt_test;
+ key  | value  
+------+--------
+ key2 | val2.1
+ key4 | val4.1
+ key3 | val3.1
+(3 rows)
+
+delete from kt_test where value = '2.1';
+select * from kt_test;
+ key  | value  
+------+--------
+ key2 | val2.1
+ key4 | val4.1
+ key3 | val3.1
+(3 rows)
+
+delete from kt_test where value = 'does not exist';
+select * from kt_test;
+ key  | value  
+------+--------
+ key2 | val2.1
+ key4 | val4.1
+ key3 | val3.1
+(3 rows)
+
+delete from kt_test;
+select * from kt_test;
+ key | value 
+-----+-------
+(0 rows)
+
+insert into kt_test values ('key2', 'val2.1');
+insert into kt_test values ('key3', 'val3.1');
+insert into kt_test values ('key4', 'val4.1');
+select * from kt_test;
+ key  | value  
+------+--------
+ key2 | val2.1
+ key4 | val4.1
+ key3 | val3.1
+(3 rows)
+
