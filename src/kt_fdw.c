@@ -55,6 +55,9 @@
 
 PG_MODULE_MAGIC;
 
+//taken from redis_fdw
+#define PROCID_TEXTEQ 67
+
 /*
  * SQL functions
  */
@@ -185,6 +188,9 @@ typedef struct {
     KtFdwPlanState plan;
     KTCUR* cur;
     KTDB* db;
+    bool key_based_qual;
+    char *key_based_qual_value;
+    bool key_based_qual_sent;
     AttInMetadata *attinmeta;
 } KtFdwExecState;
 
@@ -400,6 +406,62 @@ kt_fdw_validator(PG_FUNCTION_ARGS)
     PG_RETURN_VOID();
 }
 
+
+static void
+getKeyBasedQual(Node *node, TupleDesc tupdesc, char **value, bool *key_based_qual)
+{
+    char *key = NULL;
+    *value = NULL;
+    *key_based_qual = false;
+
+    if (!node)
+        return;
+
+    if (IsA(node, OpExpr))
+    {
+        OpExpr *op = (OpExpr *) node;
+        Node *left,
+             *right;
+        Index varattno;
+
+        if (list_length(op->args) != 2)
+            return;
+
+        left = list_nth(op->args, 0);
+
+        if (!IsA(left, Var))
+            return;
+
+        varattno = ((Var *) left)->varattno;
+
+        right = list_nth(op->args, 1);
+
+        if (IsA(right, Const))
+        {
+            StringInfoData buf;
+
+            initStringInfo(&buf);
+
+            /* And get the column and value... */
+            key = NameStr(tupdesc->attrs[varattno - 1]->attname);
+            *value = TextDatumGetCString(((Const *) right)->constvalue);
+
+            /*
+             * We can push down this qual if: - The operatory is TEXTEQ - The
+             * qual is on the key column
+             */
+            if (op->opfuncid == PROCID_TEXTEQ && strcmp(key, "key") == 0)
+                *key_based_qual = true;
+
+            return;
+        }
+    }
+
+    return;
+}
+
+
+
 static void ktGetForeignRelSize(PlannerInfo *root,
         RelOptInfo *baserel,
         Oid foreigntableid)
@@ -570,6 +632,8 @@ ktBeginForeignScan(ForeignScanState *node,
     estate = (KtFdwExecState*) palloc(sizeof(KtFdwExecState));
     estate->cur=NULL;
     estate->db = NULL;
+    estate->key_based_qual = false;
+    estate->key_based_qual_sent = false;
     node->fdw_state = (void *) estate;
 
     initTableOptions(&(estate->plan.opt));
@@ -590,7 +654,25 @@ ktBeginForeignScan(ForeignScanState *node,
         return;
 
     estate->attinmeta = TupleDescGetAttInMetadata(node->ss.ss_currentRelation->rd_att);
-    estate->cur = get_cursor(estate->db);
+
+    if (node->ss.ps.plan->qual) {
+        ListCell   *lc;
+
+        foreach(lc, node->ss.ps.qual){
+            /* Only the first qual can be pushed down to Redis */
+            ExprState  *state = lfirst(lc);
+
+            getKeyBasedQual((Node *) state->expr, node->ss.ss_currentRelation->rd_att,
+             &estate->key_based_qual_value, &estate->key_based_qual);
+
+            if (estate->key_based_qual)
+                break;
+        }
+    }
+
+
+    if (!estate->key_based_qual)
+        estate->cur = get_cursor(estate->db);
 }
 
 
@@ -640,12 +722,25 @@ ktIterateForeignScan(ForeignScanState *node)
     /* get the next record, if any, and fill in the slot */
     /* Build the tuple */
 
-    found = next(estate->db, estate->cur, &key, &value);
+    if (estate->key_based_qual)
+    {
+        if (!estate->key_based_qual_sent)
+        {
+            estate->key_based_qual_sent=true;
+            found = ktget(estate->db, estate->key_based_qual_value, &value);
+        }
+    }
+    else {
+        found = next(estate->db, estate->cur, &key, &value);
+    }
 
     if (found)
     {
         values = (char **) palloc(sizeof(char *) * 2);
-        values[0] = key;
+        if (estate->key_based_qual)
+            values[0] = estate->key_based_qual_value;
+        else
+            values[0] = key;
         values[1] = value;
         tuple = BuildTupleFromCStrings(estate->attinmeta, values);
         ExecStoreTuple(tuple, slot, InvalidBuffer, false);

@@ -98,6 +98,22 @@ bool next(KTDB* db, KTCUR* cur, char **key, char **value)
     return true;
 }
 
+bool ktget(KTDB* db, char *key, char **value){
+    _assert_(db && key);
+
+    std::string skey(key);
+    std::string sval;
+    RemoteDB* pdb = (RemoteDB*)db;
+
+    if(!pdb->get(skey, &sval))
+        return false;
+
+    *value = (char *) palloc(sizeof(char)*(sval.length()+1));
+    std::strcpy(*value, sval.c_str());
+
+    return true;
+}
+
 bool ktadd(KTDB*db, const char * key, const char * value)
 {
     _assert_(db);
