@@ -10,6 +10,7 @@ insert into kt_test values ('key4', 'val4.1');
 select * from kt_test;
 update kt_test set value = 'val1.2' where key='key1';
 select value from kt_test where key='key1';
+select value from kt_test where value='key1';
 update kt_test set value = 'val1.2' where key='keynotexist';
 select value from kt_test where key='keynotexist';
 select * from kt_test;

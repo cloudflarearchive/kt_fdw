@@ -24,6 +24,11 @@ select value from kt_test where key='key1';
  val1.2
 (1 row)
 
+select value from kt_test where value='key1';
+ value 
+-------
+(0 rows)
+
 update kt_test set value = 'val1.2' where key='keynotexist';
 select value from kt_test where key='keynotexist';
  value 
