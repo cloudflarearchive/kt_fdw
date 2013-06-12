@@ -154,6 +154,13 @@ const char *ktgeterror(KTDB* db)
     return pdb->error().name();
 }
 
+const char *ktgeterrormsg(KTDB* db)
+{
+    _assert_(db);
+    RemoteDB* pdb = (RemoteDB*)db;
+    return pdb->error().message();
+}
+
 }
 
 // END OF FILE

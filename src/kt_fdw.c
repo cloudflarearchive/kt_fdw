@@ -504,7 +504,8 @@ static void ktGetForeignRelSize(PlannerInfo *root,
 
     baserel->rows = ktdbcount(db);
 
-    ktdbclose(db);
+    if(!ktdbclose(db))
+        elog(ERROR, "Error could not close connection when counting");
     ktdbdel(db);
 
 }
@@ -647,7 +648,7 @@ ktBeginForeignScan(ForeignScanState *node,
         elog(ERROR, "Could not allocate ktdb");
 
     if(!ktdbopen(estate->db, estate->plan.opt.host, estate->plan.opt.port, estate->plan.opt.timeout))
-        elog(ERROR,"Could not open connection to KT");
+        elog(ERROR,"Could not open connection to KT %s %s", ktgeterror(estate->db), ktgeterrormsg(estate->db));
 
     /* OK, we connected. If this is an EXPLAIN, bail out now */
     if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
@@ -784,7 +785,8 @@ ktEndForeignScan(ForeignScanState *node)
         }
 
         if(estate->db){
-            ktdbclose(estate->db);
+            if(!ktdbclose(estate->db))
+                elog(ERROR, "Error could not close connection in scan");
             ktdbdel(estate->db);
             estate->db = NULL;
         }
@@ -961,7 +963,8 @@ ktBeginForeignModify(ModifyTableState *mtstate,
         elog(ERROR, "Could not allocate ktdb");
 
     if(!ktdbopen(fmstate->db, fmstate->opt.host, fmstate->opt.port, fmstate->opt.timeout))
-        elog(ERROR,"Could not open connection to KT");
+        elog(ERROR,"Could not open connection to KT %s %s", ktgeterror(fmstate->db), ktgeterrormsg(fmstate->db));
+        //elog(ERROR,"Could not open connection to KT %s %s %s %d %f", ktgeterror(fmstate->db), ktgeterrormsg(fmstate->db), fmstate->opt.host, fmstate->opt.port, fmstate->opt.timeout);
 
     rinfo->ri_FdwState=fmstate;
 }
@@ -1160,8 +1163,9 @@ ktEndForeignModify(EState *estate,
 
     if(fmstate) {
         if(fmstate->db) {
-            ktdbclose(fmstate->db);
-            ktdbclose(fmstate->db);
+            if(!ktdbclose(fmstate->db))
+                elog(ERROR, "Error could not close connection in modify");
+            ktdbdel(fmstate->db);
             fmstate->db = NULL;
         }
     }
