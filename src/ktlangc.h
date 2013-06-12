@@ -52,28 +52,22 @@ typedef struct {
   void* cur;                             /**< dummy member */
 } KTCUR;
 
-
 KTDB* ktdbnew(void);
 void ktdbdel(KTDB* db);
 bool ktdbopen(KTDB* db, const char* host, int32_t port, double timeout);
 bool ktdbclose(KTDB* db);
 
-
 int64_t ktdbcount(KTDB* db);
 
 KTCUR* get_cursor(KTDB* DB);
 void ktcurdel(KTCUR* cur);
-
 bool next(KTDB* db, KTCUR* cur, char **key, char **value);
 
 bool ktadd(KTDB*db, const char * key, const char * value);
 bool ktreplace(KTDB*db, const char * key, const char * value);
 bool ktremove(KTDB*db, const char * key);
+
 const char *ktgeterror(KTDB* db);
-
-
-
-
 
 #if defined(__cplusplus)
 }
