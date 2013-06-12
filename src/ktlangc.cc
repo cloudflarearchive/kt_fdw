@@ -43,7 +43,7 @@ void ktdbdel(KTDB* db) {
 /**
  * Open a database file.
  */
-int32_t ktdbopen(KTDB* db, const char* host, int32_t port, double timeout) {
+bool ktdbopen(KTDB* db, const char* host, int32_t port, double timeout) {
   _assert_(db && host && port && timeout);
   RemoteDB* pdb = (RemoteDB*)db;
   return pdb->open(host, port, timeout);
@@ -53,7 +53,7 @@ int32_t ktdbopen(KTDB* db, const char* host, int32_t port, double timeout) {
 /**
  * Close the database file.
  */
-int32_t ktdbclose(KTDB* db) {
+bool ktdbclose(KTDB* db) {
   _assert_(db);
   RemoteDB* pdb = (RemoteDB*)db;
   return pdb->close();
@@ -96,6 +96,47 @@ bool next(KTDB* db, KTCUR* cur, char **key, char **value)
   std::strcpy(*key, skey.c_str());
   std::strcpy(*value, sval.c_str());
   return true;
+}
+
+
+bool ktadd(KTDB*db, const char * key, const char * value)
+{
+  _assert_(db);
+  RemoteDB* pdb = (RemoteDB*)db;
+
+  std::string skey(key);
+  std::string sval(value);
+
+  return pdb->add(skey, sval);
+}
+
+bool ktreplace(KTDB*db, const char * key, const char * value)
+{
+  _assert_(db);
+  RemoteDB* pdb = (RemoteDB*)db;
+
+  std::string skey(key);
+  std::string sval(value);
+
+  return pdb->replace(skey, sval);
+}
+
+
+bool ktremove(KTDB*db, const char * key)
+{
+  _assert_(db);
+  RemoteDB* pdb = (RemoteDB*)db;
+
+  std::string skey(key);
+
+  return pdb->remove(skey);
+}
+
+const char *ktgeterror(KTDB* db)
+{
+  _assert_(db);
+  RemoteDB* pdb = (RemoteDB*)db;
+  return pdb->error().name();
 }
 
 }

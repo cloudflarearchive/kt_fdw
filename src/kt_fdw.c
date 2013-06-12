@@ -189,9 +189,12 @@ typedef struct {
 } KtFdwExecState;
 
 typedef struct {
+  ktTableOptions opt;
+  KTDB* db;
   Relation rel;
   FmgrInfo *key_info;
-
+  FmgrInfo *value_info;
+  AttrNumber key_junk_no;
 } KtFdwModifyState;
 
 void initTableOptions(struct ktTableOptions *table_options);
@@ -575,10 +578,15 @@ ktBeginForeignScan(ForeignScanState *node,
   initTableOptions(&(estate->plan.opt));
   getTableOptions(RelationGetRelid(node->ss.ss_currentRelation), &(estate->plan.opt));
 
-	/* initialize reuired state in fdw_private */
+	/* initialize required state in fdw_private */
 
  estate->db = ktdbnew();
- ktdbopen(estate->db, estate->plan.opt.host, estate->plan.opt.port, estate->plan.opt.timeout);
+
+ if(estate->db == NULL)
+  elog(ERROR, "Could not allocate ktdb");
+
+ if(!ktdbopen(estate->db, estate->plan.opt.host, estate->plan.opt.port, estate->plan.opt.timeout))
+   elog(ERROR,"Could not open connection to KT");
 
  /* OK, we connected. If this is an EXPLAIN, bail out now */
 	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
@@ -679,15 +687,16 @@ ktEndForeignScan(ForeignScanState *node)
 
 	elog(DEBUG1,"entering function %s",__func__);
 
-  if(estate)
-  {
-
-    if(estate->cur)
+  if(estate) {
+    if(estate->cur){
       ktcurdel(estate->cur);
+      estate->cur = NULL;
+    }
 
     if(estate->db){
       ktdbclose(estate->db);
       ktdbdel(estate->db);
+      estate->db = NULL;
     }
 
   }
@@ -743,7 +752,7 @@ ktAddForeignUpdateTargets(Query *parsetree,
                                 attr->attcollation,
                                0);
   /* Wrap it in a resjunk TLE with the right name ... */
-  attrname = "key";
+  attrname = "key_junk";
   tle = makeTargetEntry((Expr *) varnode,
     list_length(parsetree->targetList) + 1,
     pstrdup(attrname),true);
@@ -823,18 +832,51 @@ ktBeginForeignModify(ModifyTableState *mtstate,
   Form_pg_attribute attr;
   Oid typefnoid;
   bool isvarlena;
+  CmdType operation = mtstate->operation;
 
 	elog(DEBUG1,"entering function %s",__func__);
+
+  if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
+    return;
 
   fmstate = (KtFdwModifyState *) palloc0(sizeof(KtFdwModifyState));
   fmstate->rel = rel;
   fmstate->key_info = (FmgrInfo *) palloc0(sizeof(FmgrInfo));
+  fmstate->value_info = (FmgrInfo *) palloc0(sizeof(FmgrInfo));
+
+
+  if (operation == CMD_UPDATE || operation == CMD_DELETE)
+  {
+        /* Find the ctid resjunk column in the subplan's result */
+        Plan       *subplan = mtstate->mt_plans[subplan_index]->plan;
+        fmstate->key_junk_no = ExecFindJunkAttributeInTlist(subplan->targetlist,
+                                                          "key_junk");
+        if (!AttributeNumberIsValid(fmstate->key_junk_no))
+            elog(ERROR, "could not find key junk column");
+  }
+
 
   attr = RelationGetDescr(rel)->attrs[0];
   Assert(!attr->attisdropped);
-
   getTypeOutputInfo(attr->atttypid, &typefnoid, &isvarlena);
   fmgr_info(typefnoid, fmstate->key_info);
+
+  attr = RelationGetDescr(rel)->attrs[1];
+  Assert(!attr->attisdropped);
+  getTypeOutputInfo(attr->atttypid, &typefnoid, &isvarlena);
+  fmgr_info(typefnoid, fmstate->value_info);
+
+  initTableOptions(&(fmstate->opt));
+  getTableOptions(RelationGetRelid(rel), &(fmstate->opt));
+
+  fmstate->db = ktdbnew();
+
+  if(fmstate->db == NULL)
+    elog(ERROR, "Could not allocate ktdb");
+
+  if(!ktdbopen(fmstate->db, fmstate->opt.host, fmstate->opt.port, fmstate->opt.timeout))
+    elog(ERROR,"Could not open connection to KT");
+
 
   rinfo->ri_FdwState=fmstate;
 }
@@ -874,6 +916,7 @@ ktExecForeignInsert(EState *estate,
 	 */
 
   char * key_value;
+  char * value_value;
   Datum value;
   bool isnull;
   KtFdwModifyState *fmstate = (KtFdwModifyState *) rinfo->ri_FdwState;
@@ -883,10 +926,15 @@ ktExecForeignInsert(EState *estate,
   value = slot_getattr(planSlot, 1, &isnull);
   if(isnull)
     elog(ERROR, "can't get key value");
-
   key_value = OutputFunctionCall(fmstate->key_info, value);
 
-  elog(ERROR, "2Key value is %s", key_value);
+  value = slot_getattr(planSlot, 2, &isnull);
+  if(isnull)
+    elog(ERROR, "can't get value value");
+  value_value = OutputFunctionCall(fmstate->value_info, value);
+
+  if(!ktadd(fmstate->db, key_value, value_value))
+    elog(ERROR, "Error from kt: %s", ktgeterror(fmstate->db));
 	return slot;
 }
 
@@ -923,9 +971,38 @@ ktExecForeignUpdate(EState *estate,
 	 * foreign table will fail with an error message.
 	 *
 	 */
+  char * key_value;
+  char * key_value_new;
+  char * value_value;
+  Datum value;
+  bool isnull;
+  KtFdwModifyState *fmstate = (KtFdwModifyState *) rinfo->ri_FdwState;
 
 	elog(DEBUG1,"entering function %s",__func__);
 
+  value = ExecGetJunkAttribute(planSlot, fmstate->key_junk_no, &isnull);
+  if(isnull)
+    elog(ERROR, "can't get junk key value");
+  key_value = OutputFunctionCall(fmstate->key_info, value);
+
+  value = slot_getattr(planSlot, 1, &isnull);
+  if(isnull)
+    elog(ERROR, "can't get new key value");
+  key_value_new = OutputFunctionCall(fmstate->key_info, value);
+
+  if(strcmp(key_value, key_value_new) != 0)
+  {
+    elog(ERROR, "You cannot update key values (original key value was %s)", key_value);
+    return slot;
+  }
+
+  value = slot_getattr(planSlot, 2, &isnull);
+  if(isnull)
+    elog(ERROR, "can't get value value");
+  value_value = OutputFunctionCall(fmstate->value_info, value);
+
+  if(!ktreplace(fmstate->db, key_value, value_value))
+    elog(ERROR, "Error from kt: %s", ktgeterror(fmstate->db));
 	return slot;
 }
 
@@ -967,14 +1044,15 @@ ktExecForeignDelete(EState *estate,
 
   elog(DEBUG1,"entering function %s",__func__);
 
-  value = slot_getattr(planSlot, 1, &isnull);
+
+  value = ExecGetJunkAttribute(planSlot, fmstate->key_junk_no, &isnull);
   if(isnull)
     elog(ERROR, "can't get key value");
 
   key_value = OutputFunctionCall(fmstate->key_info, value);
 
-  elog(ERROR, "Key value is %s", key_value);
-
+  if(!ktremove(fmstate->db, key_value))
+    elog(ERROR, "Error from kt: %s", ktgeterror(fmstate->db));
 
 	return slot;
 }
@@ -993,8 +1071,18 @@ ktEndForeignModify(EState *estate,
 	 * during executor shutdown.
 	 */
 
-	elog(DEBUG1,"entering function %s",__func__);
+  KtFdwModifyState *fmstate = (KtFdwModifyState *) rinfo->ri_FdwState;
 
+  elog(DEBUG1,"entering function %s",__func__);
+
+  if(fmstate)
+  {
+    if(fmstate->db) {
+      ktdbclose(fmstate->db);
+      ktdbclose(fmstate->db);
+      fmstate->db = NULL;
+    }
+  }
 }
 
 
