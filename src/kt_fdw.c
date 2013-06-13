@@ -52,6 +52,7 @@
 #include "utils/rel.h"
 #include "utils/lsyscache.h"
 #include "nodes/makefuncs.h"
+#include "utils/memutils.h"
 
 PG_MODULE_MAGIC;
 
@@ -174,6 +175,8 @@ typedef struct ktTableOptions
     char *host;
     int32_t port;
     double timeout;
+    Oid serverId;
+    Oid userId;
 } ktTableOptions;
 /*
  * This is what will be set and stashed away in fdw_private and fetched
@@ -203,7 +206,21 @@ typedef struct {
     AttrNumber key_junk_no;
 } KtFdwModifyState;
 
+typedef struct {
+    Oid serverId;
+    Oid userId;
+} KtConnCacheKey;
+
+typedef struct {
+  KtConnCacheKey key;
+  KTDB* db;
+} KtConnCacheEntry;
+
+static HTAB *ConnectionHash = NULL;
+
 void initTableOptions(struct ktTableOptions *table_options);
+KTDB * GetKtConnection(struct ktTableOptions *table_options);
+void ReleaseKtConnection(KTDB *db);
 
 Datum
 kt_fdw_handler(PG_FUNCTION_ARGS)
@@ -259,6 +276,64 @@ static bool isValidOption(const char *option, Oid context)
     return false;
 }
 
+ KTDB * GetKtConnection(struct ktTableOptions *table_options)
+ {
+   bool        found;
+    KtConnCacheEntry *entry;
+    KtConnCacheKey key;
+
+    /* First time through, initialize connection cache hashtable */
+    if (ConnectionHash == NULL)
+    {
+        HASHCTL     ctl;
+
+        MemSet(&ctl, 0, sizeof(ctl));
+        ctl.keysize = sizeof(KtConnCacheKey);
+        ctl.entrysize = sizeof(KtConnCacheEntry);
+        ctl.hash = tag_hash;
+        /* allocate ConnectionHash in the cache context */
+        ctl.hcxt = CacheMemoryContext;
+        ConnectionHash = hash_create("kt_fdw connections", 8,
+                                     &ctl,
+                                   HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT);
+    }
+
+    /* Create hash key for the entry.  Assume no pad bytes in key struct */
+    key.serverId = table_options->serverId;
+    key.userId = table_options->userId;
+
+    /*
+     * Find or create cached entry for requested connection.
+     */
+    entry = hash_search(ConnectionHash, &key, HASH_ENTER, &found);
+    if (!found)
+    {
+        /* initialize new hashtable entry (key is already filled in) */
+        entry->db = NULL;
+    }
+
+    if (entry->db == NULL)
+    {
+        entry->db = ktdbnew();
+
+        if(!entry->db)
+            elog(ERROR, "could not allocate memory for ktdb");
+
+        if(!ktdbopen(entry->db, table_options->host, table_options->port, table_options->timeout))
+            elog(ERROR,"Could not open connection to KT %s %s", ktgeterror(entry->db), ktgeterrormsg(entry->db));
+    }
+
+    return entry->db;
+ }
+
+void ReleaseKtConnection(KTDB *db)
+{
+    /* keep arround for next connection */
+    /*if(!ktdbclose(db))
+        elog(ERROR, "Error could not close connection when counting");
+    ktdbdel(db);*/
+}
+
 void initTableOptions(struct ktTableOptions *table_options)
 {
     table_options->host = NULL;
@@ -287,6 +362,9 @@ getTableOptions(Oid foreigntableid,struct ktTableOptions *table_options)
     table = GetForeignTable(foreigntableid);
     server = GetForeignServer(table->serverid);
     mapping = GetUserMapping(GetUserId(), table->serverid);
+
+    table_options->userId = mapping->userid;
+    table_options->serverId = server->serverid;
 
     options = NIL;
     options = list_concat(options, table->options);
@@ -499,15 +577,11 @@ static void ktGetForeignRelSize(PlannerInfo *root,
 
     /* initialize reuired state in fdw_private */
 
-    db = ktdbnew();
-    ktdbopen(db, fdw_private->opt.host, fdw_private->opt.port, fdw_private->opt.timeout);
+    db = GetKtConnection(&(fdw_private->opt));
 
     baserel->rows = ktdbcount(db);
 
-    if(!ktdbclose(db))
-        elog(ERROR, "Error could not close connection when counting");
-    ktdbdel(db);
-
+    ReleaseKtConnection(db);
 }
 
 static void
@@ -642,13 +716,7 @@ ktBeginForeignScan(ForeignScanState *node,
 
     /* initialize required state in fdw_private */
 
-    estate->db = ktdbnew();
-
-    if(estate->db == NULL)
-        elog(ERROR, "Could not allocate ktdb");
-
-    if(!ktdbopen(estate->db, estate->plan.opt.host, estate->plan.opt.port, estate->plan.opt.timeout))
-        elog(ERROR,"Could not open connection to KT %s %s", ktgeterror(estate->db), ktgeterrormsg(estate->db));
+    estate->db = GetKtConnection(&(estate->plan.opt));
 
     /* OK, we connected. If this is an EXPLAIN, bail out now */
     if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
@@ -785,9 +853,7 @@ ktEndForeignScan(ForeignScanState *node)
         }
 
         if(estate->db){
-            if(!ktdbclose(estate->db))
-                elog(ERROR, "Error could not close connection in scan");
-            ktdbdel(estate->db);
+            ReleaseKtConnection(estate->db);
             estate->db = NULL;
         }
     }
@@ -957,14 +1023,7 @@ ktBeginForeignModify(ModifyTableState *mtstate,
     initTableOptions(&(fmstate->opt));
     getTableOptions(RelationGetRelid(rel), &(fmstate->opt));
 
-    fmstate->db = ktdbnew();
-
-    if(fmstate->db == NULL)
-        elog(ERROR, "Could not allocate ktdb");
-
-    if(!ktdbopen(fmstate->db, fmstate->opt.host, fmstate->opt.port, fmstate->opt.timeout))
-        elog(ERROR,"Could not open connection to KT %s %s", ktgeterror(fmstate->db), ktgeterrormsg(fmstate->db));
-        //elog(ERROR,"Could not open connection to KT %s %s %s %d %f", ktgeterror(fmstate->db), ktgeterrormsg(fmstate->db), fmstate->opt.host, fmstate->opt.port, fmstate->opt.timeout);
+    fmstate->db = GetKtConnection(&(fmstate->opt));
 
     rinfo->ri_FdwState=fmstate;
 }
@@ -1163,9 +1222,7 @@ ktEndForeignModify(EState *estate,
 
     if(fmstate) {
         if(fmstate->db) {
-            if(!ktdbclose(fmstate->db))
-                elog(ERROR, "Error could not close connection in modify");
-            ktdbdel(fmstate->db);
+            ReleaseKtConnection(fmstate->db);
             fmstate->db = NULL;
         }
     }
