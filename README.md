@@ -12,7 +12,7 @@ a good template of how to build FDWs for PostgreSQL.
 Therefore, KT needs to be compiled with LUA support. To do this,
 run
 >
->    ./configure --enable-lua
+>     ./configure --enable-lua
 >
 > when compiling KT.
 >
