@@ -54,6 +54,8 @@
 #include "nodes/makefuncs.h"
 #include "utils/memutils.h"
 
+ #include "access/xact.h"
+
 PG_MODULE_MAGIC;
 
 //taken from redis_fdw
@@ -214,9 +216,12 @@ typedef struct {
 typedef struct {
   KtConnCacheKey key;
   KTDB* db;
+  int xact_depth;
 } KtConnCacheEntry;
 
 static HTAB *ConnectionHash = NULL;
+/* needed to shortcut end of transaction logic*/
+static bool xact_got_connection = false;
 
 void initTableOptions(struct ktTableOptions *table_options);
 KTDB * GetKtConnection(struct ktTableOptions *table_options);
@@ -276,6 +281,65 @@ static bool isValidOption(const char *option, Oid context)
     return false;
 }
 
+static void ktSubXactCallback(XactEvent event, void * arg)
+{
+    HASH_SEQ_STATUS scan;
+    KtConnCacheEntry *entry;
+
+    if(!xact_got_connection)
+        return;
+
+    /* xact ended so end transaction on all connections, transaction are "global" to all tables and fdws */
+    hash_seq_init(&scan, ConnectionHash);
+    while((entry = (KtConnCacheEntry *) hash_seq_search(&scan))) {
+        if(entry->db == NULL || entry->xact_depth == 0)
+            continue;
+
+        switch(event) {
+
+            case XACT_EVENT_PRE_COMMIT:
+                if(!ktcommit(entry->db))
+                    elog(ERROR,"Could not commit to KT %s %s", ktgeterror(entry->db), ktgeterrormsg(entry->db));
+                break;
+            case XACT_EVENT_PRE_PREPARE:
+                ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                         errmsg("cannot prepare a transaction that modified remote tables")));
+                break;
+            case XACT_EVENT_COMMIT:
+            case XACT_EVENT_PREPARE:
+                /* Should not get here -- pre-commit should have handled it */
+                elog(ERROR, "missed cleaning up connection during pre-commit");
+                break;
+            case XACT_EVENT_ABORT:
+                if(!ktabort(entry->db))
+                    elog(ERROR,"Could not abort from KT %s %s", ktgeterror(entry->db), ktgeterrormsg(entry->db));
+                break;
+        }
+        entry->xact_depth = 0;
+    }
+
+    xact_got_connection = false;
+}
+
+static void KtBeginTransactionIfNeeded(KtConnCacheEntry* entry) {
+    int curlevel = GetCurrentTransactionNestLevel(); //I dont think it should ever be less than 1;
+
+    if(curlevel < 1) //I dont get something
+        elog(ERROR, "Transaction level should not be less than one"); // I don't understand
+
+    if(curlevel > 1) //kt does not support savepoints
+        ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+            errmsg("Kyoto Tycoon does not support savepoints")));
+
+    if (entry->xact_depth < curlevel){
+        if(!ktbegin_transaction(entry->db))
+            elog(ERROR,"Could not begin transaction from KT %s %s", ktgeterror(entry->db), ktgeterrormsg(entry->db));
+        entry->xact_depth = curlevel; //1
+        xact_got_connection = true;
+    }
+
+}
+
  KTDB * GetKtConnection(struct ktTableOptions *table_options)
  {
    bool        found;
@@ -296,6 +360,8 @@ static bool isValidOption(const char *option, Oid context)
         ConnectionHash = hash_create("kt_fdw connections", 8,
                                      &ctl,
                                    HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT);
+
+        RegisterXactCallback(ktSubXactCallback, NULL);
     }
 
     /* Create hash key for the entry.  Assume no pad bytes in key struct */
@@ -310,6 +376,7 @@ static bool isValidOption(const char *option, Oid context)
     {
         /* initialize new hashtable entry (key is already filled in) */
         entry->db = NULL;
+        entry->xact_depth = 0;
     }
 
     if (entry->db == NULL)
@@ -322,6 +389,8 @@ static bool isValidOption(const char *option, Oid context)
         if(!ktdbopen(entry->db, table_options->host, table_options->port, table_options->timeout))
             elog(ERROR,"Could not open connection to KT %s %s", ktgeterror(entry->db), ktgeterrormsg(entry->db));
     }
+
+    KtBeginTransactionIfNeeded(entry);
 
     return entry->db;
  }

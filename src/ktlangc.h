@@ -71,6 +71,10 @@ bool ktremove(KTDB*db, const char * key);
 const char *ktgeterror(KTDB* db);
 const char *ktgeterrormsg(KTDB* db);
 
+bool ktbegin_transaction(KTDB *db);
+bool ktcommit(KTDB *db);
+bool ktabort(KTDB *db);
+
 #if defined(__cplusplus)
 }
 #endif

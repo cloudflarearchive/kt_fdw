@@ -9,7 +9,7 @@ $before_insert = time();
 
 $result = pg_prepare($dbconn, "insert_q", "INSERT INTO kt_test VALUES ($1, $2)");
 
-for($i = 0; $i < 1000000; $i++) {
+for($i = 0; $i < 10000; $i++) {
   $result = pg_execute($dbconn, "insert_q",array("k".$i, "v".$i));
 }
 

@@ -161,6 +161,33 @@ const char *ktgeterrormsg(KTDB* db)
     return pdb->error().message();
 }
 
+bool ktbegin_transaction(KTDB *db)
+{
+    _assert_(db);
+    RemoteDB* pdb = (RemoteDB*)db;
+    std::map<std::string, std::string> in;
+    std::map<std::string, std::string> out;
+    return pdb->play_script("ktfdwbegintransaction", in, &out);
+}
+
+bool ktcommit(KTDB *db)
+{
+    _assert_(db);
+    RemoteDB* pdb = (RemoteDB*)db;
+    std::map<std::string, std::string> in;
+    std::map<std::string, std::string> out;
+    return pdb->play_script("ktfdwcommit", in, &out);
+}
+
+bool ktabort(KTDB *db)
+{
+    _assert_(db);
+    RemoteDB* pdb = (RemoteDB*)db;
+    std::map<std::string, std::string> in;
+    std::map<std::string, std::string> out;
+    return pdb->play_script("ktfdwabort", in, &out);
+}
+
 }
 
 // END OF FILE
