@@ -220,8 +220,11 @@ typedef struct {
 } KtConnCacheEntry;
 
 static HTAB *ConnectionHash = NULL;
+
+#ifdef USE_TRANSACTIONS
 /* needed to shortcut end of transaction logic*/
 static bool xact_got_connection = false;
+#endif
 
 void initTableOptions(struct ktTableOptions *table_options);
 KTDB * GetKtConnection(struct ktTableOptions *table_options);
@@ -281,6 +284,7 @@ static bool isValidOption(const char *option, Oid context)
     return false;
 }
 
+#ifdef USE_TRANSACTIONS
 static void ktSubXactCallback(XactEvent event, void * arg)
 {
     HASH_SEQ_STATUS scan;
@@ -339,6 +343,7 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry* entry) {
     }
 
 }
+#endif
 
  KTDB * GetKtConnection(struct ktTableOptions *table_options)
  {
@@ -361,7 +366,9 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry* entry) {
                                      &ctl,
                                    HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT);
 
+#ifdef USE_TRANSACTIONS
         RegisterXactCallback(ktSubXactCallback, NULL);
+#endif
     }
 
     /* Create hash key for the entry.  Assume no pad bytes in key struct */
@@ -390,7 +397,9 @@ static void KtBeginTransactionIfNeeded(KtConnCacheEntry* entry) {
             elog(ERROR,"Could not open connection to KT %s %s", ktgeterror(entry->db), ktgeterrormsg(entry->db));
     }
 
+#ifdef USE_TRANSACTIONS
     KtBeginTransactionIfNeeded(entry);
+#endif
 
     return entry->db;
  }

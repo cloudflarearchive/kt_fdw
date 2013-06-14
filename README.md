@@ -1,6 +1,7 @@
 # Kyoto Tycoon Foreign Data Wrapper for PostgreSQL
 
-Based on Blackhole Foreign Data Wrapper for PostgreSQL
+Thanks to the Blackhole Foreign Data Wrapper for PostgreSQL for providing
+a good template of how to build FDWs for PostgreSQL.
 
 to build:
 make
@@ -8,6 +9,16 @@ make
 
 to test:
 make installcheck
+
+A note about transactional support:
+This FDW supports transactions of Kyoto Tycoon is compiled with LUA support.
+To compile with LUA use ./configure --enable-lua when compiling Kyoto Tycoon.
+Furthermore the ktserver has to be started with tranactions.lua loaded:
+
+./ktserver -scr <fdw directory>/transactions.lua
+
+If you want to disable transactions remove -DUSE_TRANSACTIONS from the makefile.
+
 
 Usage:
 
