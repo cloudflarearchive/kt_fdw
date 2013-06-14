@@ -1,17 +1,18 @@
-/*************************************************************************************************
- * C language binding
- *                                                               Copyright (C) 2009-2012 FAL Labs
- * This file is part of Kyoto Cabinet.
- * This program is free software: you can redistribute it and/or modify it under the terms of
- * the GNU General Public License as published by the Free Software Foundation, either version
- * 3 of the License, or any later version.
- * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- * You should have received a copy of the GNU General Public License along with this program.
- * If not, see <http://www.gnu.org/licenses/>.
- *************************************************************************************************/
-
+/*-------------------------------------------------------------------------
+ *
+ * Kyoto Tycoon Foreign Data Wrapper for PostgreSQL
+ *
+ * Copyright (c) 2013 CloudFlare
+ *
+ * This software is released under the MIT Licence
+ *
+ * Author: Matvey Arye <mat@cloudflare.com>
+ *
+ * IDENTIFICATION
+ *        kt_fdw/src/ktlang.h
+ *
+ *-------------------------------------------------------------------------
+ */
 
 #include <ktremotedb.h>
 #include "ktlangc.h"
