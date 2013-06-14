@@ -11,7 +11,9 @@ a good template of how to build FDWs for PostgreSQL.
 > This FDW supports Kyoto Tycoon transactions via LUA scripts.
 Therefore, KT needs to be compiled with LUA support. To do this,
 run
+>
 >    ./configure --enable-lua
+>
 > when compiling KT.
 >
 > Furthermore the ktserver has to be started with tranactions.lua loaded:
