@@ -54,12 +54,13 @@
 #include "nodes/makefuncs.h"
 #include "utils/memutils.h"
 
- #include "access/xact.h"
+#include "access/xact.h"
 
 PG_MODULE_MAGIC;
 
 //taken from redis_fdw
 #define PROCID_TEXTEQ 67
+//#define DEBUG 1
 
 /*
  * SQL functions
@@ -165,8 +166,8 @@ static struct ktFdwOption valid_options[] =
 {
     /* Connection options */
     {"host", ForeignServerRelationId},
-    {"port", ForeignServerRelationId },
-    {"timeout",  ForeignServerRelationId},
+    {"port", ForeignServerRelationId},
+    {"timeout", ForeignServerRelationId},
     /* Sentinel */
     {NULL, InvalidOid}
 };
@@ -273,13 +274,13 @@ static bool isValidOption(const char *option, Oid context)
     struct ktFdwOption *opt;
 
 #ifdef DEBUG
-    elog(NOTICE, "isValidOption");
+    elog(NOTICE, "isValidOption %s", option);
 #endif
-
-    for (opt = valid_options; opt->optname; opt++)
-    {
-        if (context == opt->optcontext && strcmp(opt->optname, option) == 0)
+    
+    for (opt = valid_options; opt->optname; opt++){
+        if (context == opt->optcontext && strcmp(opt->optname, option) == 0) {
             return true;
+        }
     }
     return false;
 }
@@ -481,7 +482,7 @@ Datum
 kt_fdw_validator(PG_FUNCTION_ARGS)
 {
     List	   *options_list = untransformRelOptions(PG_GETARG_DATUM(0));
-    Oid catalog = PG_GETARG_OID(0);
+    Oid catalog = PG_GETARG_OID(1);
     ListCell *cell;
 
     /* used for detecting duplicates; does not remember vals */
