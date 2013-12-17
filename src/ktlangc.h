@@ -48,6 +48,14 @@ extern "C" {
 #include <time.h>
 #include <stdint.h>
 
+#if !defined(MAX_EXPIRY)
+#if defined(INT64MAX)
+#define MAX_EXPIRY INT64MAX
+#else
+#define MAX_EXPIRY INT_MAX
+#endif
+#endif
+
 /**
  * C wrapper of polymorphic database.
  */
