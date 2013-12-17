@@ -123,7 +123,7 @@ bool ktadd(KTDB*db, const char * key, const char * value)
     std::string skey(key);
     std::string sval(value);
 
-    return pdb->add(skey, sval);
+    return pdb->add(skey, sval, MAX_EXPIRY);
 }
 
 bool ktreplace(KTDB*db, const char * key, const char * value)
@@ -134,7 +134,7 @@ bool ktreplace(KTDB*db, const char * key, const char * value)
     std::string skey(key);
     std::string sval(value);
 
-    return pdb->replace(skey, sval);
+    return pdb->replace(skey, sval, MAX_EXPIRY);
 }
 
 

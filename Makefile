@@ -29,7 +29,11 @@ OBJS         =  $(patsubst %.c,%.o,$(wildcard src/*.c)) src/ktlangc.o
 PG_CONFIG    = /usr/local/pgsql/bin/pg_config
 SHLIB_LINK = -lkyototycoon -lsasl2
 
-CXXFLAGS = -march=native -m64 -g -O2 -Wall -fPIC -fsigned-char -g0 -O2 -Wno-unused-but-set-variable -Wno-unused-but-set-parameter
+ARCH := $(shell getconf LONG_BIT)
+CPP_FLAGS_32 := -m32
+CPP_FLAGS_64 := -m64
+
+CXXFLAGS = -march=native $(CPP_FLAGS_$(ARCH)) -g -O2 -Wall -fPIC -fsigned-char -g0 -O2 -Wno-unused-but-set-variable -Wno-unused-but-set-parameter
 PG_CPPFLAGS = -DUSE_TRANSACTIONS
 
 all: sql/$(EXTENSION)--$(EXTVERSION).sql
