@@ -60,6 +60,7 @@ PG_MODULE_MAGIC;
 
 //taken from redis_fdw
 #define PROCID_TEXTEQ 67
+#define PROCID_TEXTLIKE 850
 //#define DEBUG 1
 
 /*
@@ -197,6 +198,13 @@ typedef struct {
     bool key_based_qual;
     char *key_based_qual_value;
     bool key_based_qual_sent;
+    bool like_based_qual;
+    char *like_based_qual_value;
+    char **like_based_qual_keys;
+    bool like_based_qual_keys_defined;
+    int like_based_qual_keys_size;
+    int like_based_qual_index;
+    bool like_based_qual_sent;
     AttInMetadata *attinmeta;
 } KtFdwExecState;
 
@@ -565,6 +573,59 @@ kt_fdw_validator(PG_FUNCTION_ARGS)
 
 
 static void
+getLikeBasedQual(Node *node, TupleDesc tupdesc, char **value, bool *like_based_qual)
+{
+    char *key = NULL;
+    *value = NULL;
+    *like_based_qual = false;
+
+    if (!node)
+        return;
+
+    if (IsA(node, OpExpr))
+    {
+        OpExpr *op = (OpExpr *) node;
+        Node *left,
+             *right;
+        Index varattno;
+
+        if (list_length(op->args) != 2)
+            return;
+
+        left = list_nth(op->args, 0);
+
+        if (!IsA(left, Var))
+            return;
+
+        varattno = ((Var *) left)->varattno;
+
+        right = list_nth(op->args, 1);
+
+        if (IsA(right, Const))
+        {
+            //StringInfoData buf;
+
+            //initStringInfo(&buf);
+
+            /* And get the column and value... */
+            key = NameStr(tupdesc->attrs[varattno - 1]->attname);
+            *value = TextDatumGetCString(((Const *) right)->constvalue);
+
+            /*
+             * We can push down this qual if: - The operatory is TEXTEQ - The
+             * qual is on the key column
+             */
+            if (op->opfuncid == PROCID_TEXTLIKE && strcmp(key, "key") == 0)
+                *like_based_qual = true;
+
+            return;
+        }
+    }
+
+    return;
+}
+
+static void
 getKeyBasedQual(Node *node, TupleDesc tupdesc, char **value, bool *key_based_qual)
 {
     char *key = NULL;
@@ -797,6 +858,14 @@ ktBeginForeignScan(ForeignScanState *node,
     estate->db = NULL;
     estate->key_based_qual = false;
     estate->key_based_qual_sent = false;
+    estate->like_based_qual = false;
+    estate->like_based_qual_sent = false;
+    estate->like_based_qual_index = 0;
+    if (estate->like_based_qual_keys_defined) {
+        estate->like_based_qual_keys_defined = false;
+        //free(estate->like_based_qual_keys);
+    }
+    estate->like_based_qual_keys = NULL;
     node->fdw_state = (void *) estate;
 
     initTableOptions(&(estate->plan.opt));
@@ -821,15 +890,16 @@ ktBeginForeignScan(ForeignScanState *node,
 
             getKeyBasedQual((Node *) state->expr, node->ss.ss_currentRelation->rd_att,
              &estate->key_based_qual_value, &estate->key_based_qual);
+            getLikeBasedQual((Node *) state->expr, node->ss.ss_currentRelation->rd_att, 
+             &estate->like_based_qual_value, &estate->like_based_qual);
 
-            if (estate->key_based_qual)
+            if (estate->key_based_qual || estate->like_based_qual)
                 break;
         }
     }
 
 
-    if (!estate->key_based_qual)
-        estate->cur = get_cursor(estate->db);
+    estate->cur = get_cursor(estate->db);
 }
 
 
@@ -887,6 +957,30 @@ ktIterateForeignScan(ForeignScanState *node)
             found = ktget(estate->db, estate->key_based_qual_value, &value);
         }
     }
+    else if (estate->like_based_qual)
+    {
+        if (!estate->like_based_qual_sent)
+        {
+            estate->like_based_qual_sent=true;
+            if (estate->like_based_qual_value[strlen(estate->like_based_qual_value) - 1] == '%')
+		estate->like_based_qual_value[strlen(estate->like_based_qual_value) - 1] = '\0';
+	    elog(DEBUG1, "Searching for %s:", estate->like_based_qual_value);
+            found = ktmatchprefix(estate->db, estate->like_based_qual_value, &estate->like_based_qual_keys, &estate->like_based_qual_keys_size);
+	    elog(DEBUG1, "found %d keys", estate->like_based_qual_keys_size);
+            if (found) {
+                estate->like_based_qual_keys_defined=true;
+	    }
+            estate->like_based_qual_index = 0;
+        }
+        if (found || (estate->like_based_qual_keys && estate->like_based_qual_index < estate->like_based_qual_keys_size)) {
+            elog(DEBUG1, "index %d/%d", estate->like_based_qual_index, estate->like_based_qual_keys_size );
+	    elog(DEBUG1, "key %s", estate->like_based_qual_keys[estate->like_based_qual_index]);
+            key = (char *)palloc(sizeof(char)*strlen(estate->like_based_qual_keys[estate->like_based_qual_index]) + 1);
+            strcpy(key, estate->like_based_qual_keys[estate->like_based_qual_index]);
+	    found = ktget(estate->db, estate->like_based_qual_keys[estate->like_based_qual_index], &value);
+            elog(DEBUG1, "found: %d", found);
+	}
+    }
     else {
         found = next(estate->db, estate->cur, &key, &value);
     }
@@ -896,7 +990,11 @@ ktIterateForeignScan(ForeignScanState *node)
         values = (char **) palloc(sizeof(char *) * 2);
         if (estate->key_based_qual)
             values[0] = estate->key_based_qual_value;
-        else
+        else if (estate->like_based_qual) {
+            //values[0] = (char*) palloc(sizeof(char)*(strlen(key)+1));
+            values[0] = key;
+            estate->like_based_qual_index++;
+        } else
             values[0] = key;
         values[1] = value;
         tuple = BuildTupleFromCStrings(estate->attinmeta, values);

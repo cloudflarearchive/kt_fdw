@@ -70,6 +70,7 @@ KTCUR* get_cursor(KTDB* DB);
 void ktcurdel(KTCUR* cur);
 bool next(KTDB* db, KTCUR* cur, char **key, char **value);
 bool ktget(KTDB* db, char *key, char **value);
+bool ktmatchprefix(KTDB* db, char *key, char ***keys, int *);
 
 bool ktadd(KTDB*db, const char * key, const char * value);
 bool ktreplace(KTDB*db, const char * key, const char * value);

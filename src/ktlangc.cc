@@ -99,6 +99,25 @@ bool next(KTDB* db, KTCUR* cur, char **key, char **value)
     return true;
 }
 
+bool ktmatchprefix(KTDB* db, char *key, char ***keys, int *key_size){
+    _assert_(db && key);
+
+    std::vector<std::string> sval;
+    RemoteDB* pdb = (RemoteDB*)db;
+
+    if(pdb->match_prefix(key, &sval, -1) <= 0)
+        return false;
+    *keys = (char **) calloc((sval.size()+1), sizeof(char *));
+    elog(DEBUG1, "Allocating %d bytes", sizeof(char*)*(sval.size()+1));
+    for (unsigned int i = 0; i < sval.size(); i++) {
+        (*keys)[i] = (char *) calloc((sval[i].length()+1), sizeof(char));
+        elog(DEBUG1, "setting key %s", sval[i].c_str());
+        std::strncpy((*keys)[i], sval[i].c_str(), sval[i].length());
+    }
+    *key_size = (int) sval.size();
+    return true;
+}
+
 bool ktget(KTDB* db, char *key, char **value){
     _assert_(db && key);
 

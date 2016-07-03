@@ -29,8 +29,8 @@ OBJS         =  $(patsubst %.c,%.o,$(wildcard src/*.c)) src/ktlangc.o
 PG_CONFIG    = /usr/local/pgsql/bin/pg_config
 SHLIB_LINK = -lkyototycoon -lsasl2
 
-CXXFLAGS = -march=native -m64 -g -O2 -Wall -fPIC -fsigned-char -g0 -O2 -Wno-unused-but-set-variable -Wno-unused-but-set-parameter
-PG_CPPFLAGS = -DUSE_TRANSACTIONS
+CXXFLAGS = -march=native -m64 -g -O2 -Wall -fPIC -fsigned-char -g0 -O2 -Wno-unused-but-set-variable -Wno-unused-but-set-parameter -ggdb
+#PG_CPPFLAGS = -DUSE_TRANSACTIONS
 
 all: sql/$(EXTENSION)--$(EXTVERSION).sql
 
