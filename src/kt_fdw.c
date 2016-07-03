@@ -706,6 +706,9 @@ ktGetForeignPaths(PlannerInfo *root,
                 total_cost,
                 NIL,    /* no pathkeys */
                 NULL,   /* no outer rel either */
+#if PG_VERSION_NUM >= 90500
+                NULL,
+#endif
                 NIL));  /* no fdw_private data */
 }
 
@@ -750,7 +753,13 @@ ktGetForeignPlan(PlannerInfo *root,
             scan_clauses,
             scan_relid,
             NIL, /* no expressions to evaluate */
-            NIL); /* no private state either */
+            NIL
+#if PG_VERSION_NUM >= 90500
+            ,NULL
+            ,NULL
+            ,NULL
+#endif
+            ); /* no private state either */
 
 }
 
