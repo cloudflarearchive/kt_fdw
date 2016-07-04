@@ -37,3 +37,9 @@ run
     CREATE FOREIGN TABLE <table name> (key TEXT, value TEXT) SERVER <server name>;
 
 Now you can Select, Update, Delete and Insert!
+
+##SELECT examples
+
+    SELECT * FROM <table name> WHERE key='value';
+    SELECT * FROM <table name> WHERE key LIKE 'val%';
+    SELECT * FROM <table name>;
